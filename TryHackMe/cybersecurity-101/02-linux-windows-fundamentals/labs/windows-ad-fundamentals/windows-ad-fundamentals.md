@@ -16,4 +16,3 @@ Explore core features of the Windows OS related to security: NTFS, UAC, Registry
 - UAC is a key layer against privilege escalation.  
 - NTFS is permission-based and supports encryption.  
 - The Windows Registry is powerful but dangerous to modify.
-
