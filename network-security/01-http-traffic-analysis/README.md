@@ -1,4 +1,3 @@
-
 # Lab 01 — HTTP Traffic Analysis with Wireshark
 
 ## Overview
@@ -57,13 +56,20 @@ machine, both the source and destination addresses appeared as `::1`.
 ## 2. TCP Connection Establishment
 
 Before HTTP data could be exchanged, the client and server established a TCP
-connection using the three-way handshake.
+connection using the TCP three-way handshake.
 
 | Direction | Flags | Seq | Ack |
 | --- | --- | ---: | ---: |
 | Client → Server | SYN | 0 | 0 |
 | Server → Client | SYN, ACK | 0 | 1 |
 | Client → Server | ACK | 1 | 1 |
+
+### Captured Packet Sequence
+
+The capture below shows the TCP three-way handshake followed by the HTTP
+request, acknowledgement, response, and final acknowledgement.
+
+![TCP handshake and HTTP exchange](./images/packet-sequence.png)
 
 The client used ephemeral port `29005`, while the SecureBank API was listening
 on port `8080`.
@@ -165,6 +171,16 @@ This included:
 
 No decryption was required.
 
+### Reconstructed HTTP Stream
+
+The reconstructed TCP stream shows that both the HTTP request and response
+were readable directly from the captured traffic.
+
+The request contained an `Authorization: Bearer` header. The bearer token
+itself has been redacted before publication.
+
+![Plaintext HTTP stream with redacted bearer token](./images/plaintext-http-stream-redacted.png)
+
 > **Note:** Authentication tokens and other sensitive values have been redacted
 > from screenshots included in this repository.
 
@@ -174,7 +190,8 @@ No decryption was required.
 
 ### Observation
 
-The SecureBank development API was exposed over plaintext HTTP.
+During this lab, the SecureBank development API was configured to communicate
+over plaintext HTTP.
 
 Packet inspection demonstrated that application-layer data could be read
 directly from captured traffic. In this test, that included an Authorization
@@ -194,6 +211,7 @@ Depending on the request, this could include:
 - API responses
 
 Authentication and transport encryption solve different security problems.
+
 A valid bearer token can authenticate a request, but it does not protect that
 token from observation while being transmitted over plaintext HTTP.
 
