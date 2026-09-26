@@ -35,7 +35,7 @@ Labs that use SecureBank will reference the relevant application configuration a
 
 | Lab | Technologies | Topics |
 | --- | --- | --- |
-| [01 — HTTP vs HTTPS Traffic Analysis](./network-security/01-http-traffic-analysis/) | Wireshark, TCP/IP, HTTP, TLS 1.3, Docker | TCP analysis, plaintext exposure, TLS negotiation, encrypted application traffic |
+| [01 — HTTP vs HTTPS Traffic Analysis](./network-security/01-http-vs-https-traffic-analysis/) | Wireshark, TCP/IP, HTTP, TLS 1.3, Docker | TCP analysis, plaintext exposure, TLS negotiation, encrypted application traffic |
 
 More labs will be added as the portfolio develops.
 
