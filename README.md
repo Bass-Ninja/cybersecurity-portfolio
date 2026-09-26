@@ -19,6 +19,7 @@ Rather than serving as a collection of course notes or CTF write-ups, it focuses
 - investigate vulnerabilities
 - harden configurations
 - verify remediations
+- inspect defensive telemetry
 
 The goal is to connect security theory with observable behavior in real systems and understand not only **what** a security control does, but also **how it behaves, how it can be tested, and how its effectiveness can be verified**.
 
@@ -39,6 +40,7 @@ SecureBank provides a practical environment for exploring topics such as:
 - Web and API security
 - Identity and access management
 - Docker network security
+- Host firewalling
 - Security monitoring
 - Vulnerability testing
 - Application hardening
@@ -98,6 +100,17 @@ https://securebank.lab:3443
 
 Backend services remain inside the Docker network unless a lab explicitly changes that configuration.
 
+The Ubuntu target also uses host firewall rules to distinguish between the intended public application surface and management access.
+
+Current externally observed behavior from Kali is:
+
+```text
+22/tcp   filtered
+3443/tcp open
+```
+
+SecureBank remains reachable, while SSH management access is blocked from the attacker-facing lab interface.
+
 This makes it possible to test SecureBank from an external perspective without exposing the environment to the normal home network.
 
 ## Labs
@@ -109,6 +122,7 @@ This makes it possible to test SecureBank from an external perspective without e
 | [01 — HTTP vs HTTPS Traffic Analysis](./network-security/01-http-vs-https-traffic-analysis/) | Wireshark, TCP/IP, HTTP, TLS 1.3, Docker | TCP analysis, plaintext exposure, TLS negotiation, encrypted application traffic |
 | [02 — Docker Network Exposure](./network-security/02-docker-network-exposure/) | Docker, Docker Compose, PowerShell, TCP/IP | Port publishing, loopback binding, container networking, attack-surface reduction |
 | [03 — Nmap Service Enumeration](./network-security/03-nmap-service-enumeration/) | Kali Linux, Nmap, curl, OpenSSL, Nginx | Full TCP discovery, service fingerprinting, TLS enumeration, HTTP metadata, remediation verification |
+| [04 — Host Firewall and Service Segmentation](./network-security/04-firewall-and-segmentation/) | UFW, Linux, Nmap, SSH, curl | Default-deny firewalling, management-plane filtering, service segmentation, firewall logging, verification |
 
 ### Reference Material
 
@@ -131,7 +145,7 @@ Depending on the experiment, labs may include:
 - attack-surface discovery
 - controlled attack or abuse scenarios
 - security findings
-- packet, HTTP, TLS, or log evidence
+- packet, HTTP, TLS, firewall, or log evidence
 - mitigation or hardening
 - verification testing
 - lessons learned
@@ -165,10 +179,13 @@ Understand what an attacker can discover
         │
         ▼
 Lab 04
-Firewall and network segmentation
+Host firewall and service segmentation
+        │
+        ▼
+Understand what the attacker should actually be allowed to reach
 ```
 
-This progression moves from observing network communication to understanding attack surface, external reconnaissance, and finally network access control.
+This progression moves from observing network communication to understanding attack surface, external reconnaissance, access control, and defensive visibility.
 
 ## Completed Concepts
 
@@ -212,6 +229,20 @@ The portfolio currently includes hands-on work with:
 - HTTP header inspection
 - software-version disclosure analysis
 - remediation and rescanning
+
+### Host Firewalling and Service Segmentation
+
+- UFW default policies
+- interface-specific firewall rules
+- allowing intended public services
+- filtering management-plane access
+- Nmap `open`, `closed`, and `filtered` states
+- SSH reachability testing
+- Linux socket inspection
+- systemd service verification
+- firewall logging
+- blocked-connection telemetry
+- distinction between service state and network reachability
 
 ## Example Security Engineering Findings
 
@@ -265,6 +296,69 @@ Server: nginx
 
 The exact version was no longer disclosed in normal HTTP responses.
 
+### SSH Management-Plane Exposure
+
+Initial external enumeration from Kali showed:
+
+```text
+22/tcp   open
+3443/tcp open
+```
+
+SSH was reachable from the same lab network as the attacker VM.
+
+The Ubuntu target was hardened with UFW using a default-deny incoming policy.
+
+SecureBank HTTPS remained explicitly allowed:
+
+```bash
+sudo ufw allow in on enp0s8 to any port 3443 proto tcp
+```
+
+SSH was blocked and logged on the attacker-facing interface:
+
+```bash
+sudo ufw deny in on enp0s8 log proto tcp to any port 22
+```
+
+After remediation:
+
+```text
+22/tcp   filtered
+3443/tcp open
+```
+
+SecureBank continued to return:
+
+```text
+HTTP/1.1 200 OK
+```
+
+while the SSH daemon remained active and listening locally.
+
+This demonstrated that network reachability can be reduced without disabling the underlying service.
+
+### Firewall Telemetry
+
+Blocked SSH attempts from Kali generated firewall events containing fields such as:
+
+```text
+SRC=192.168.56.10
+DST=192.168.56.20
+DPT=22
+PROTO=TCP
+```
+
+This showed that the same control could provide both:
+
+```text
+prevention
++
+visibility
+```
+
+and established a foundation for later SIEM and detection-engineering labs.
+
 ## Current Focus
 
 I'm currently developing deeper practical knowledge in:
@@ -272,6 +366,7 @@ I'm currently developing deeper practical knowledge in:
 - Networking and network security
 - Linux networking
 - Service enumeration
+- Host firewalling
 - Web and API security
 - Identity and access management
 - Security monitoring and SIEM
@@ -284,13 +379,27 @@ I'm currently developing deeper practical knowledge in:
 
 ### Network Security
 
-Planned work includes:
+Completed foundational work includes:
 
-- Firewall configuration
-- Management-plane isolation
-- Network segmentation
-- Verification of filtered versus closed ports
-- Packet-level analysis of firewall behavior
+- HTTP vs HTTPS traffic analysis
+- Docker service exposure
+- full TCP service enumeration
+- TLS and HTTP metadata enumeration
+- host firewall configuration
+- management-plane filtering
+- verification of filtered versus open ports
+- firewall logging
+
+Future network-security extensions may include:
+
+- packet-level analysis of firewall behavior
+- `DROP` versus `REJECT` behavior
+- dedicated management networks
+- separate attacker and management subnets
+- routed security zones
+- VLAN-based segmentation
+- firewall policy between subnets
+- forwarding firewall telemetry into a SIEM
 
 ### Web and API Security
 
@@ -298,12 +407,12 @@ Planned work includes:
 
 - API reconnaissance
 - BOLA/IDOR testing
-- Broken function-level authorization
+- broken function-level authorization
 - JWT validation
-- Rate limiting
-- Replay behavior
-- Input validation
-- Mass-assignment testing
+- rate limiting
+- replay behavior
+- input validation
+- mass-assignment testing
 - Burp Suite API testing
 - CORS and security-header analysis
 
@@ -312,10 +421,10 @@ Planned work includes:
 Planned work includes:
 
 - Keycloak realm hardening
-- Role-based access-control testing
+- role-based access-control testing
 - OIDC Authorization Code + PKCE flow analysis
-- Authentication versus authorization testing
-- Token-claim inspection
+- authentication versus authorization testing
+- token-claim inspection
 
 ### Security Monitoring
 
@@ -323,9 +432,11 @@ Planned work includes:
 
 - API audit logging
 - Wazuh SecureBank monitoring
+- firewall-log ingestion
 - suspicious-login detection
 - API enumeration detection
 - repeated authorization-failure detection
+- blocked management-access detection
 - incident investigation and reporting
 
 ### DevSecOps
@@ -433,6 +544,10 @@ Examples:
 
 > Does a remediation actually change the externally observable result?
 
+> Can the public application remain reachable while management access is blocked?
+
+> Is a blocked service actually stopped, or only inaccessible because of a firewall?
+
 This is preferred over tool-centric writeups such as:
 
 > Learning Wireshark.
@@ -440,6 +555,10 @@ This is preferred over tool-centric writeups such as:
 or:
 
 > Learning Nmap.
+
+or:
+
+> Learning UFW.
 
 Tools are used to answer security questions rather than being the objective themselves.
 
