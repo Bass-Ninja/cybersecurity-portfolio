@@ -1,8 +1,8 @@
-# Networking & Security Lab Cheatsheet
+# Cybersecurity Lab Cheatsheet
 
-Quick-reference notes collected while building and testing the SecureBank cybersecurity lab.
+Quick-reference notes collected while building, observing, testing, and hardening the SecureBank cybersecurity lab.
 
-This document is intended as a practical personal reference for commands, concepts, and mental models encountered during the labs.
+This document is intended as a practical personal reference for commands, concepts, security-testing workflows, and mental models encountered during the labs.
 
 ---
 
@@ -30,66 +30,58 @@ This document is intended as a practical personal reference for commands, concep
 ## Kali
 
 ```text
-NAT interface:      eth0
-Lab interface:      eth1
-Lab IP:             192.168.56.10
+NAT interface: eth0
+Lab interface: eth1
+Lab IP: 192.168.56.10
 ```
 
 ## Ubuntu Target
 
 ```text
-NAT interface:      enp0s3
-Lab interface:      enp0s8
-Lab IP:             192.168.56.20
-Hostname:           securebank-target
-Lab hostname:       securebank.lab
+NAT interface: enp0s3
+Lab interface: enp0s8
+Lab IP: 192.168.56.20
+Hostname: securebank-target
+Lab hostname: securebank.lab
 ```
 
 ---
 
 # 2. VirtualBox Network Model
 
-Each VM has two network interfaces.
-
-## Adapter 1 — NAT
+## NAT Adapter
 
 Provides Internet access.
 
 ```text
-Kali / Ubuntu
-     │
-     ▼
+VM
+ │
+ ▼
 VirtualBox NAT
-     │
-     ▼
+ │
+ ▼
 Internet
 ```
 
-The default route should normally remain on this interface.
+## Internal Network
 
-## Adapter 2 — Internal Network
-
-Provides communication only inside the isolated lab.
+Provides isolated communication between lab VMs.
 
 ```text
-Kali
-192.168.56.10
-      │
-      │ securebank-lab
-      ▼
-Ubuntu
-192.168.56.20
+Kali 192.168.56.10
+        │
+        ▼
+securebank-lab
+        │
+        ▼
+Ubuntu 192.168.56.20
 ```
 
-No gateway is required on this interface.
+No gateway is required on the internal interface.
 
 ---
 
-# 3. Networking Mental Models
-
-## Host vs Container Network
-
-A Docker container can listen on a port without that port being available outside Docker.
+# 3. Docker Networking Mental Model
 
 ```text
 container listening
@@ -97,26 +89,11 @@ container listening
 host port published
 ```
 
-Example:
-
-```text
-API container
-:8080
-```
-
-can exist internally without:
-
-```text
-host:8080
-```
-
-being reachable.
+A service may exist inside Docker without being remotely reachable.
 
 ---
 
 # 4. Docker Port Publishing
-
-Example:
 
 ```yaml
 ports:
@@ -130,8 +107,6 @@ host:8080
     ↓
 container:8080
 ```
-
-The service becomes reachable through host network interfaces unless the host side is restricted.
 
 ---
 
@@ -150,78 +125,43 @@ localhost:8080
 container:8080
 ```
 
-but another machine cannot normally use:
-
-```text
-HOST-LAN-IP:8080
-```
-
-to reach it.
-
-Mental model:
-
-```text
-127.0.0.1
-=
-this machine only
-```
+Another machine cannot normally connect to the host LAN/lab address on that port.
 
 ---
 
-# 6. All-Interface Binding
+# 6. All-Interface Docker Binding
 
 ```yaml
 ports:
   - "8080:8080"
 ```
 
-typically appears as:
+often appears as:
 
 ```text
-0.0.0.0:8080->8080/tcp
-[::]:8080->8080/tcp
+0.0.0.0:8080
+[::]:8080
 ```
 
-`0.0.0.0` means all IPv4 host interfaces.
-
-`[::]` means IPv6 interfaces.
-
-This usually makes the service remotely reachable unless another firewall blocks it.
+This exposes the service on host interfaces unless another firewall blocks it.
 
 ---
 
-# 7. No Published Docker Port
+# 7. Internal-Only Container Service
 
-```yaml
-api:
-  # no ports
-```
-
-does not mean the application stopped listening.
-
-Containers on the same Docker network can still communicate.
-
-Example:
+No `ports:` entry is needed for container-to-container traffic.
 
 ```text
-securebank-web
-      │
-      ▼
-http://api:8080
+web → api:8080
+
+api → postgres:5432
+
+api → keycloak:8080
 ```
 
-or:
+Key rule:
 
-```text
-API
- │
- ▼
-postgres:5432
-```
-
-Key principle:
-
-> A container only needs a published host port when something outside its Docker network requires direct access.
+> Publish a host port only when something outside the Docker network requires direct access.
 
 ---
 
@@ -230,7 +170,6 @@ Key principle:
 ```text
 External client / Kali
           │
-          │ HTTPS
           ▼
       Nginx :3443
           │
@@ -243,88 +182,42 @@ External client / Kali
    PostgreSQL
 ```
 
-Current intended Docker exposure:
-
 | Port | Service | Exposure |
 | ---: | --- | --- |
-| `3443` | Nginx / SecureBank HTTPS | Remote |
-| `3000` | Nginx HTTP | Host loopback |
-| `8443` | Direct API HTTPS | Host loopback |
+| `3443` | SecureBank HTTPS | Remote |
+| `3000` | Nginx HTTP | Loopback |
+| `8443` | API HTTPS | Loopback |
 | `8080` | API HTTP | Docker only |
-| `8081` | Direct Keycloak HTTP | Host loopback |
+| `8081` | Keycloak HTTP | Loopback |
 | `5432` | PostgreSQL | Docker only |
 
 ---
 
 # 9. Docker Commands
 
-## Show Running Containers
-
 ```bash
 docker ps
-```
-
-Compose:
-
-```bash
 docker compose ps
-```
-
----
-
-## Start Stack
-
-```bash
 docker compose up -d
-```
-
-Build images first:
-
-```bash
 docker compose up -d --build
-```
-
----
-
-## Recreate One Service
-
-```bash
-docker compose up -d --force-recreate api
-```
-
-Build and recreate:
-
-```bash
-docker compose up -d --build --force-recreate web
-```
-
----
-
-## Stop Stack
-
-```bash
 docker compose down
+docker compose logs --tail=100
+docker compose logs -f api
+docker network ls
+docker network inspect <network>
 ```
-
-Delete persistent volumes too:
-
-```bash
-docker compose down --volumes
-```
-
-Use `--volumes` carefully.
 
 ---
 
 # 10. SecureBank Lab Compose
 
-Local development:
+Local:
 
 ```bash
 docker compose up -d --build
 ```
 
-Security lab:
+Lab:
 
 ```bash
 docker compose \
@@ -333,68 +226,9 @@ docker compose \
   up -d --build
 ```
 
-The base configuration stays suitable for localhost development.
-
-The lab override contains VM-specific settings such as:
-
-```text
-securebank.lab
-```
-
-and the lab-specific Keycloak realm.
-
 ---
 
-# 11. Docker Logs
-
-All services:
-
-```bash
-docker compose logs --tail=100
-```
-
-Specific service:
-
-```bash
-docker compose logs api --tail=100
-```
-
-Follow continuously:
-
-```bash
-docker compose logs -f api
-```
-
----
-
-# 12. Docker Networks
-
-List networks:
-
-```bash
-docker network ls
-```
-
-Inspect:
-
-```bash
-docker network inspect <network-name>
-```
-
-Useful information includes:
-
-```text
-network subnet
-container names
-container IP addresses
-connected services
-```
-
----
-
-# 13. Run Commands Inside Containers
-
-General form:
+# 11. Docker Exec
 
 ```bash
 docker exec <container> <command>
@@ -407,65 +241,33 @@ docker exec securebank-web \
   wget -qO- http://securebank-api:8080/health/ready
 ```
 
-This is useful for proving container-to-container connectivity.
-
 ---
 
-# 14. Windows Port Testing
-
-Show TCP listeners:
+# 12. Windows TCP Testing
 
 ```powershell
-Get-NetTCPConnection -LocalPort 8080
+Get-NetTCPConnection -State Listen
 ```
-
-Multiple ports:
-
-```powershell
-Get-NetTCPConnection -State Listen |
-    Where-Object {
-        $_.LocalPort -in 8080,8443,8081,15432,3443
-    } |
-    Format-Table LocalAddress,LocalPort,State,OwningProcess
-```
-
----
-
-# 15. Test TCP Reachability on Windows
 
 ```powershell
 Test-NetConnection localhost -Port 15432
 ```
 
-Important field:
+Important:
 
 ```text
-TcpTestSucceeded : True
-```
-
-or:
-
-```text
-TcpTestSucceeded : False
+TcpTestSucceeded
 ```
 
 ---
 
-# 16. Linux Network Interfaces
-
-Show interfaces:
+# 13. Linux Network Interfaces
 
 ```bash
 ip addr
 ```
 
-Specific interface:
-
-```bash
-ip addr show eth1
-```
-
-or:
+Specific:
 
 ```bash
 ip addr show enp0s8
@@ -473,60 +275,27 @@ ip addr show enp0s8
 
 ---
 
-# 17. Linux Routing Table
+# 14. Routing
 
 ```bash
 ip route
 ```
 
-Example Kali model:
+Mental model:
 
 ```text
-default via 10.0.2.2 dev eth0
-192.168.56.0/24 dev eth1
+default route → NAT
+
+192.168.56.0/24 → lab interface
 ```
-
-Meaning:
-
-```text
-Internet traffic
-→ eth0 / NAT
-
-Lab traffic
-→ eth1
-```
-
-The lab interface does not need a default gateway.
 
 ---
 
-# 18. Temporary Static IP Address
-
-Ubuntu example:
-
-```bash
-sudo ip addr add 192.168.56.20/24 dev enp0s8
-```
-
-Kali example:
-
-```bash
-sudo ip addr add 192.168.56.10/24 dev eth1
-```
-
-These changes normally disappear after reboot.
-
----
-
-# 19. Persistent Kali Address with NetworkManager
-
-Show connections:
+# 15. Persistent Kali IP
 
 ```bash
 nmcli connection show
 ```
-
-Configure:
 
 ```bash
 sudo nmcli connection modify eth1 \
@@ -535,18 +304,9 @@ sudo nmcli connection modify eth1 \
   ipv4.gateway ""
 ```
 
-Restart:
-
-```bash
-sudo nmcli connection down eth1
-sudo nmcli connection up eth1
-```
-
 ---
 
-# 20. Persistent Ubuntu Address with Netplan
-
-Example:
+# 16. Ubuntu Netplan
 
 ```yaml
 network:
@@ -554,44 +314,24 @@ network:
   ethernets:
     enp0s3:
       dhcp4: true
-
     enp0s8:
       dhcp4: false
       addresses:
         - 192.168.56.20/24
 ```
 
-Test safely:
-
 ```bash
 sudo netplan try
-```
-
-Apply:
-
-```bash
 sudo netplan apply
 ```
 
-Do not configure another default gateway on the isolated interface.
-
 ---
 
-# 21. Basic Connectivity Testing
-
-Kali → Ubuntu:
+# 17. Connectivity
 
 ```bash
 ping -c 4 192.168.56.20
 ```
-
-Ubuntu → Kali:
-
-```bash
-ping -c 4 192.168.56.10
-```
-
-Hostname:
 
 ```bash
 ping securebank.lab
@@ -599,46 +339,27 @@ ping securebank.lab
 
 ---
 
-# 22. Hostname Resolution
-
-Kali `/etc/hosts` entry:
+# 18. Hosts File
 
 ```text
 192.168.56.20 securebank.lab
 ```
 
-Add:
-
-```bash
-echo '192.168.56.20 securebank.lab' |
-  sudo tee -a /etc/hosts
-```
-
 ---
 
-# 23. SSH Server
+# 19. SSH
 
-Install on Ubuntu:
+Install:
 
 ```bash
 sudo apt install -y openssh-server
 ```
 
-Enable immediately and at boot:
+Enable:
 
 ```bash
 sudo systemctl enable --now ssh
 ```
-
-Check:
-
-```bash
-sudo systemctl status ssh --no-pager
-```
-
----
-
-# 24. SSH Client
 
 Connect:
 
@@ -652,20 +373,12 @@ Short timeout:
 ssh -o ConnectTimeout=5 nina@192.168.56.20
 ```
 
-Exit:
-
-```bash
-exit
-```
-
 ---
 
-# 25. HTTP Testing with curl
-
-HTTP:
+# 20. HTTP Testing
 
 ```bash
-curl http://host:port/path
+curl http://host/path
 ```
 
 HTTPS:
@@ -674,50 +387,31 @@ HTTPS:
 curl https://host/path
 ```
 
-Ignore certificate trust errors in the controlled self-signed lab:
+Self-signed lab certificate:
 
 ```bash
 curl -k https://securebank.lab:3443
 ```
 
-Headers only:
+Headers:
 
 ```bash
 curl -k -I https://securebank.lab:3443
 ```
 
-`-k` disables certificate verification.
-
-Do not treat that as normal production behavior.
-
 ---
 
-# 26. HTTP vs HTTPS Mental Model
+# 21. HTTP vs HTTPS
 
-## HTTP
+HTTP:
 
 ```text
 TCP
  ↓
-HTTP
+HTTP plaintext
 ```
 
-Application data is plaintext on the network.
-
-A packet capture may expose:
-
-```text
-HTTP method
-URL/path
-headers
-Authorization bearer token
-request body
-response body
-```
-
----
-
-## HTTPS
+HTTPS:
 
 ```text
 TCP
@@ -727,106 +421,39 @@ TLS
 HTTP
 ```
 
-The HTTP contents are protected by TLS.
+HTTPS protects application payloads.
 
-A passive network observer can still see metadata such as:
-
-```text
-source/destination IP
-source/destination ports
-packet lengths
-timing
-TLS handshake
-certificate
-TLS version
-cipher suite
-```
-
-but normal HTTP content is encrypted.
+Network metadata remains visible.
 
 ---
 
-# 27. TCP Three-Way Handshake
+# 22. TCP Handshake
 
 ```text
-Client → Server   SYN
-Server → Client   SYN/ACK
-Client → Server   ACK
+SYN
+ ↓
+SYN/ACK
+ ↓
+ACK
 ```
-
-Then application data can flow.
 
 ---
 
-# 28. TCP Sequence and Acknowledgement Numbers
-
-Mental model:
-
-```text
-Sequence number
-=
-position of my outgoing data
-```
-
-```text
-Acknowledgement number
-=
-next byte I expect from you
-```
-
-SYN consumes one sequence number.
-
----
-
-# 29. Wireshark Filters
-
-TCP:
+# 23. Wireshark Filters
 
 ```text
 tcp
-```
-
-HTTP:
-
-```text
 http
-```
-
-TLS:
-
-```text
 tls
-```
-
-DNS:
-
-```text
 dns
-```
-
-ICMP:
-
-```text
 icmp
-```
-
-Specific TCP port:
-
-```text
 tcp.port == 8080
-```
-
-Specific IP:
-
-```text
 ip.addr == 192.168.56.20
 ```
 
 ---
 
-# 30. Follow a TCP Stream
-
-In Wireshark:
+# 24. Follow TCP Stream
 
 ```text
 Right-click packet
@@ -834,161 +461,71 @@ Right-click packet
 → TCP Stream
 ```
 
-Useful for reconstructing plaintext TCP conversations such as HTTP.
+---
+
+# 25. Lab 01 Lesson
+
+```text
+authentication
+≠
+transport confidentiality
+```
+
+Bearer token over HTTP:
+
+```text
+visible
+```
+
+Bearer token over HTTPS:
+
+```text
+encrypted in transit
+```
 
 ---
 
-# 31. Lab 01 Core Lesson
-
-Plaintext HTTP can expose authentication material.
-
-```text
-Bearer token over HTTP
-→ visible in packet capture
-```
-
-With TLS:
-
-```text
-Bearer token over HTTPS
-→ encrypted in transit
-```
-
-Important:
-
-> Authentication does not automatically provide transport confidentiality.
-
----
-
-# 32. Nmap Default Scan
+# 26. Nmap Default Scan
 
 ```bash
 nmap 192.168.56.20
 ```
 
-The default scan checks commonly used TCP ports.
-
-It does not guarantee that every listening TCP service will be discovered.
-
-In the lab, the default scan found:
-
-```text
-22/tcp open ssh
-```
-
-but initially missed SecureBank on:
-
-```text
-3443/tcp
-```
+A default scan does not scan every TCP port.
 
 ---
 
-# 33. Full TCP Port Scan
+# 27. Full TCP Scan
 
 ```bash
 nmap -p- 192.168.56.20
 ```
 
-`-p-` means:
+Scans:
 
 ```text
-scan TCP ports 1–65535
+1–65535
 ```
-
-This discovered:
-
-```text
-22/tcp
-3443/tcp
-```
-
-Important:
-
-> Discovery should not rely only on ports you already know exist.
 
 ---
 
-# 34. Service and Version Detection
+# 28. Version Detection
 
 ```bash
 nmap -sV -p 22,3443 192.168.56.20
 ```
 
-Example result:
-
-```text
-22/tcp
-OpenSSH 10.2p1
-
-3443/tcp
-ssl/http
-nginx 1.29.8
-```
-
 ---
 
-# 35. Aggressive Version Detection
-
-```bash
-nmap -sV --version-all -p 3443 192.168.56.20
-```
-
-Useful when normal version detection does not provide enough information.
-
----
-
-# 36. Nmap Default Scripts
+# 29. Default NSE Scripts
 
 ```bash
 nmap -sC -sV -p 22,3443 192.168.56.20
 ```
 
-`-sC` runs Nmap's default NSE script set.
-
-Useful information can include:
-
-```text
-HTTP title
-server information
-TLS certificate
-certificate SANs
-protocol metadata
-```
-
 ---
 
-# 37. TLS Certificate Enumeration with Nmap
-
-```bash
-nmap -p 3443 \
-  --script ssl-cert \
-  192.168.56.20
-```
-
-Useful fields:
-
-```text
-subject
-issuer
-SAN values
-key type
-key size
-validity dates
-signature algorithm
-```
-
----
-
-# 38. TLS Cipher Enumeration
-
-```bash
-nmap -p 3443 \
-  --script ssl-enum-ciphers \
-  192.168.56.20
-```
-
-Combined:
+# 30. TLS Nmap Scripts
 
 ```bash
 nmap -p 3443 \
@@ -996,16 +533,9 @@ nmap -p 3443 \
   192.168.56.20
 ```
 
-The SecureBank lab supported:
-
-```text
-TLS 1.2
-TLS 1.3
-```
-
 ---
 
-# 39. OpenSSL TLS Inspection
+# 31. OpenSSL TLS Inspection
 
 ```bash
 openssl s_client \
@@ -1013,49 +543,34 @@ openssl s_client \
   -servername securebank.lab
 ```
 
-Useful fields include:
+Observed:
 
 ```text
-certificate subject
-issuer
-TLS version
-cipher
-key exchange group
-certificate verification result
-```
-
-Observed lab negotiation:
-
-```text
-Protocol: TLSv1.3
-Cipher: TLS_AES_256_GCM_SHA384
+TLSv1.3
+TLS_AES_256_GCM_SHA384
 ```
 
 ---
 
-# 40. Self-Signed Certificate Error
-
-Lab output:
+# 32. Self-Signed Certificate
 
 ```text
-Verify return code: 18 (self-signed certificate)
+Verify return code: 18
 ```
 
-This is expected because the lab certificate is locally generated and not signed by a trusted public CA.
-
-It does not automatically mean TLS encryption failed.
+Expected in this controlled lab.
 
 ---
 
-# 41. Nginx Version Disclosure
+# 33. Nginx Version Disclosure
 
-Before hardening:
+Before:
 
 ```text
 Server: nginx/1.29.8
 ```
 
-Nginx configuration:
+Hardening:
 
 ```nginx
 server_tokens off;
@@ -1067,533 +582,148 @@ After:
 Server: nginx
 ```
 
-Verify:
-
-```bash
-curl -k -I https://securebank.lab:3443
-```
-
-Security principle:
-
-> Avoid exposing unnecessary implementation details.
-
 ---
 
-# 42. SecureBank Security Headers
-
-Observed application headers include:
-
-```text
-X-Content-Type-Options: nosniff
-X-Frame-Options: DENY
-Referrer-Policy: no-referrer
-Permissions-Policy
-Content-Security-Policy
-```
-
-TLS and security headers solve different problems.
-
-```text
-TLS
-→ protects data in transit
-```
-
-```text
-browser security headers
-→ influence browser security behavior
-```
-
----
-
-# 43. Lab 02 Core Lesson
+# 34. Lab 02 Lesson
 
 ```text
 container listening
 ≠
-service exposed to host/network
+remotely exposed
 ```
-
-Container-to-container communication does not require host port publishing.
-
-Example:
-
-```text
-API → postgres:5432
-```
-
-works without:
-
-```text
-host:15432
-```
-
-being exposed.
 
 ---
 
-# 44. Lab 03 Core Lesson
+# 35. Lab 03 Lesson
 
 ```text
 service running
 ≠
-service discovered by default scan
+discovered by default scan
 ```
 
-Reconnaissance is progressive.
-
-Useful workflow:
-
-```text
-default scan
-    ↓
-full port scan
-    ↓
-service detection
-    ↓
-protocol-specific enumeration
-```
+Enumeration should be progressive.
 
 ---
 
-# 45. Basic Enumeration Workflow
-
-```text
-Identify target
-      ↓
-Check reachability
-      ↓
-Default scan
-      ↓
-Full TCP scan
-      ↓
-Service detection
-      ↓
-Protocol-specific enumeration
-      ↓
-Analyze findings
-      ↓
-Remediate
-      ↓
-Rescan
-```
-
----
-
-# 46. UFW Status
+# 36. UFW Status
 
 ```bash
 sudo ufw status verbose
-```
-
-Show rule numbers:
-
-```bash
 sudo ufw status numbered
 ```
 
 ---
 
-# 47. UFW Default Policies
-
-Deny unsolicited incoming traffic:
+# 37. UFW Defaults
 
 ```bash
 sudo ufw default deny incoming
-```
-
-Allow outgoing:
-
-```bash
 sudo ufw default allow outgoing
 ```
 
-Mental model:
-
-```text
-incoming
-→ deny unless explicitly allowed
-
-outgoing
-→ allow
-```
-
 ---
 
-# 48. Enable / Disable UFW
-
-Enable:
-
-```bash
-sudo ufw enable
-```
-
-Disable:
-
-```bash
-sudo ufw disable
-```
-
-Be careful when enabling firewall rules over SSH.
-
-Have console access or another recovery method available first.
-
----
-
-# 49. Interface-Specific UFW Allow Rule
-
-Allow SecureBank only through the lab interface:
+# 38. Allow SecureBank
 
 ```bash
 sudo ufw allow in on enp0s8 to any port 3443 proto tcp
 ```
 
-Breakdown:
-
-```text
-allow
-→ permit
-
-in
-→ incoming traffic
-
-on enp0s8
-→ only this interface
-
-to any port 3443
-→ destination TCP port 3443
-
-proto tcp
-→ TCP only
-```
-
 ---
 
-# 50. Interface-Specific UFW Deny Rule
-
-```bash
-sudo ufw deny in on enp0s8 to any port 22 proto tcp
-```
-
-Blocks SSH arriving through the isolated lab interface.
-
----
-
-# 51. UFW Deny + Log
-
-Working syntax used in the lab:
+# 39. Block and Log SSH
 
 ```bash
 sudo ufw deny in on enp0s8 log proto tcp to any port 22
 ```
 
-This:
+---
 
-```text
-blocks
-+
-logs
+# 40. Enable UFW
+
+```bash
+sudo ufw enable
 ```
 
-matching connection attempts.
+Always keep console access available when modifying firewall rules over SSH.
 
 ---
 
-# 52. Delete UFW Rules
-
-Show numbered rules:
-
-```bash
-sudo ufw status numbered
-```
-
-Delete by number:
-
-```bash
-sudo ufw delete 2
-```
-
-Run:
-
-```bash
-sudo ufw status numbered
-```
-
-again afterwards because rule numbers can shift.
-
----
-
-# 53. Nmap Port States
-
-## Open
+# 41. Nmap Port States
 
 ```text
 open
+→ service reachable
 ```
-
-A service is reachable and accepting connections.
-
-## Closed
 
 ```text
 closed
+→ host responds, no service listening
 ```
-
-The host responded, but nothing is listening.
-
-## Filtered
 
 ```text
 filtered
-```
-
-A firewall or packet filter prevents Nmap from determining normal service reachability.
-
-Lab 04 example:
-
-```text
-Before:
-22/tcp open
-
-After UFW:
-22/tcp filtered
+→ firewall/filter prevents normal determination
 ```
 
 ---
 
-# 54. Service State vs Network Reachability
-
-Important distinction:
-
-```text
-service running
-≠
-service remotely reachable
-```
-
-Lab example:
-
-```text
-sshd:
-active
-
-TCP 22:
-listening
-
-Kali:
-cannot connect
-```
-
-The firewall controls reachability without stopping the service.
-
----
-
-# 55. Check Linux Listening TCP Ports
-
-All:
-
-```bash
-ss -ltn
-```
-
-With process information:
+# 42. Check Listening Ports
 
 ```bash
 sudo ss -ltnp
 ```
 
-Specific port:
+Specific:
 
 ```bash
 sudo ss -ltnp | grep :22
 ```
 
-Observed:
-
-```text
-0.0.0.0:22
-[::]:22
-```
-
-Meaning SSH listens on IPv4 and IPv6.
-
 ---
 
-# 56. systemd Service State
-
-SSH:
+# 43. Service State
 
 ```bash
 sudo systemctl status ssh --no-pager
 ```
 
-Start:
+Important:
 
-```bash
-sudo systemctl start ssh
-```
-
-Stop:
-
-```bash
-sudo systemctl stop ssh
-```
-
-Enable at boot:
-
-```bash
-sudo systemctl enable ssh
-```
-
-Enable and start:
-
-```bash
-sudo systemctl enable --now ssh
+```text
+service running
+≠
+remotely reachable
 ```
 
 ---
 
-# 57. Firewall Logging
-
-Kernel journal:
-
-```bash
-sudo journalctl -k
-```
-
-Watch live:
+# 44. Firewall Logs
 
 ```bash
 sudo journalctl -kf
 ```
 
-Search UFW entries:
+Search:
 
 ```bash
 sudo journalctl -k | grep UFW
 ```
 
-Search destination port 22:
+Useful fields:
 
-```bash
-sudo journalctl -k | grep 'DPT=22'
+```text
+SRC
+DST
+SPT
+DPT
+PROTO
 ```
 
 ---
 
-# 58. Firewall Log Fields
-
-Common fields:
-
-```text
-SRC=
-source IP
-
-DST=
-destination IP
-
-SPT=
-source port
-
-DPT=
-destination port
-
-PROTO=
-protocol
-```
-
-Lab example:
-
-```text
-SRC=192.168.56.10
-DST=192.168.56.20
-DPT=22
-PROTO=TCP
-```
-
-Meaning:
-
-```text
-Kali
-192.168.56.10
-      ↓
-attempted TCP connection
-      ↓
-Ubuntu
-192.168.56.20:22
-```
-
----
-
-# 59. Public Plane vs Management Plane
-
-Public application:
-
-```text
-SecureBank HTTPS
-TCP/3443
-```
-
-Management:
-
-```text
-SSH
-TCP/22
-```
-
-Security principle:
-
-> Management services should not automatically be reachable from the same networks as public application services.
-
----
-
-# 60. Host Firewall vs Full Network Segmentation
-
-Current lab:
-
-```text
-Kali
-192.168.56.10
-
-Ubuntu
-192.168.56.20
-```
-
-Both are inside:
-
-```text
-192.168.56.0/24
-```
-
-So they are still in the same Layer 3 subnet.
-
-UFW provides:
-
-```text
-host firewall enforcement
-+
-service segmentation
-```
-
-Full network segmentation would more commonly involve:
-
-```text
-different VLANs
-different subnets
-routing boundaries
-firewalls between zones
-```
-
----
-
-# 61. Lab 04 Core Lesson
-
-```text
-service listening
-≠
-attacker can reach service
-```
-
-And:
+# 45. Lab 04 Lesson
 
 ```text
 firewall filtering
@@ -1601,73 +731,547 @@ firewall filtering
 service shutdown
 ```
 
-A firewall can reduce the attack surface while keeping required local functionality intact.
+And:
+
+```text
+block + log
+=
+prevention + visibility
+```
 
 ---
 
-# 62. Prevention + Visibility
+# 46. Burp Suite
 
-A useful firewall rule can provide:
+Start:
+
+```bash
+burpsuite
+```
+
+Useful areas:
 
 ```text
-prevention
-+
-telemetry
+Proxy
+├── Intercept
+└── HTTP history
 ```
+
+---
+
+# 47. Burp Integrated Browser
+
+Use:
+
+```text
+Proxy
+→ Open browser
+```
+
+This avoids manually configuring a separate browser proxy for basic labs.
+
+---
+
+# 48. Burp Intercept
+
+When enabled:
+
+```text
+Browser
+   │
+   ▼
+Burp
+   │
+   X request paused
+```
+
+Use:
+
+```text
+Forward
+```
+
+to send the intercepted request.
+
+For normal reconnaissance, turn Intercept off after login and use HTTP history.
+
+---
+
+# 49. HTTP History
+
+HTTP history records requests even when Intercept is off.
+
+Use it to inspect:
+
+```text
+method
+URL
+status
+request headers
+request body
+response headers
+response body
+```
+
+---
+
+# 50. API Recon Workflow
+
+```text
+Authenticate normally
+        ↓
+Browse application
+        ↓
+Observe /api/ traffic
+        ↓
+Record endpoints
+        ↓
+Record HTTP methods
+        ↓
+Record query parameters
+        ↓
+Inspect request bodies
+        ↓
+Inspect response objects
+        ↓
+Map object identifiers
+        ↓
+Identify trust boundaries
+```
+
+---
+
+# 51. Bearer Authentication
+
+Observed:
+
+```http
+Authorization: Bearer <JWT>
+```
+
+Bearer tokens are credentials.
+
+Never commit live token values into documentation.
+
+Use:
+
+```http
+Authorization: Bearer <redacted>
+```
+
+---
+
+# 52. JWT Structure
+
+JWT:
+
+```text
+header.payload.signature
+```
+
+Useful claims observed in SecureBank:
+
+```text
+iss
+aud
+sub
+exp
+iat
+azp
+realm roles
+```
+
+---
+
+# 53. SecureBank JWT Trust Model
+
+```text
+JWT
+ │
+ ├── issuer
+ ├── audience
+ ├── expiry
+ ├── signature
+ ├── subject
+ └── roles
+```
+
+The API must validate the token rather than merely decode it.
+
+---
+
+# 54. User Context Mental Model
+
+SecureBank collection endpoints do not send a user ID.
 
 Example:
 
-```text
-SSH attempt
-     ↓
-UFW
-     ↓
-blocked
-     ↓
-logged
+```http
+GET /api/accounts
 ```
 
-Later this could become:
+Instead:
 
 ```text
-UFW log
-   ↓
-Wazuh
-   ↓
-detection rule
-   ↓
-alert
+Bearer JWT
+    │
+    ▼
+sub
+    │
+    ▼
+UserContext
+    │
+    ▼
+user-scoped data
 ```
 
 ---
 
-# 63. Firewall Verification Workflow
+# 55. No User ID Does Not Mean No BOLA
+
+Important:
 
 ```text
-Baseline scan
-      ↓
-Configure firewall
-      ↓
-Rescan
-      ↓
-Test allowed service
-      ↓
-Test blocked service
-      ↓
-Verify local service state
-      ↓
-Inspect firewall logs
+no userId in URL
+≠
+no object authorization risk
 ```
 
-The control is not considered verified merely because the configuration file looks correct.
+Object IDs can still appear in:
 
-Test the observable result.
+```text
+request bodies
+URL resource IDs
+responses
+related objects
+```
 
 ---
 
-# 64. Core Security Engineering Workflow
+# 56. API Object References Discovered
 
-Used throughout the portfolio:
+Accounts:
+
+```text
+account id
+account number
+```
+
+Transfers:
+
+```text
+transfer id
+sourceAccountId
+destinationAccountId
+```
+
+Beneficiaries:
+
+```text
+beneficiary id
+accountId
+accountNumber
+```
+
+---
+
+# 57. Transfer Endpoint
+
+```http
+POST /api/transfers
+```
+
+Body:
+
+```json
+{
+  "sourceAccountId": "...",
+  "destinationAccountNumber": "...",
+  "amount": 5,
+  "currency": "EUR"
+}
+```
+
+Important boundary:
+
+```text
+JWT subject
++
+sourceAccountId
+↓
+ownership check
+```
+
+---
+
+# 58. BOLA Mental Model
+
+BOLA:
+
+```text
+Broken Object Level Authorization
+```
+
+Basic pattern:
+
+```text
+authenticated user
+      │
+      ▼
+object ID supplied
+      │
+      ▼
+server fails ownership check
+      │
+      ▼
+unauthorized object access
+```
+
+---
+
+# 59. SecureBank Transfer BOLA Candidate
+
+Legitimate:
+
+```text
+sourceAccountId = user's account
+```
+
+Future test:
+
+```text
+sourceAccountId = another user's account
+```
+
+Expected secure behavior:
+
+```text
+request rejected
+```
+
+---
+
+# 60. Beneficiary Delete Endpoint
+
+```http
+DELETE /api/beneficiaries/{id}
+```
+
+Critical boundary:
+
+```text
+JWT subject
++
+beneficiary ID
+↓
+ownership check
+```
+
+---
+
+# 61. SecureBank Beneficiary BOLA Candidate
+
+Legitimate:
+
+```text
+DELETE own beneficiary
+```
+
+Future test:
+
+```text
+DELETE another user's beneficiary
+```
+
+Expected:
+
+```text
+rejected
+```
+
+---
+
+# 62. Transfer Idempotency
+
+Observed header:
+
+```http
+Idempotency-Key: <UUID>
+```
+
+Purpose:
+
+```text
+same logical request
++
+same idempotency key
+↓
+operation should not execute twice
+```
+
+Future lab:
+
+```text
+replay identical transfer
+```
+
+---
+
+# 63. Query Parameters
+
+Transfer history:
+
+```text
+page
+pageSize
+sortBy
+sortDirection
+```
+
+Potential future validation tests:
+
+```text
+page=0
+pageSize=very-large
+sortBy=invalid
+sortDirection=invalid
+```
+
+Do not confuse reconnaissance with exploitation.
+
+Map first, test later.
+
+---
+
+# 64. API Object Graph
+
+```text
+User
+ │
+ ├── Account
+ │     └── accountId
+ │
+ ├── Transfer
+ │     ├── transferId
+ │     ├── sourceAccountId
+ │     └── destinationAccountId
+ │
+ └── Beneficiary
+       ├── beneficiaryId
+       └── accountId
+```
+
+---
+
+# 65. Identity vs Object Authorization
+
+Identity:
+
+```text
+Who are you?
+```
+
+comes from:
+
+```text
+JWT
+```
+
+Authorization:
+
+```text
+Can you operate on this object?
+```
+
+requires checking:
+
+```text
+JWT subject
++
+resource identifier
+```
+
+Authentication alone is not enough.
+
+---
+
+# 66. Reconnaissance vs Testing
+
+Reconnaissance:
+
+```text
+discover
+observe
+map
+classify
+```
+
+Testing:
+
+```text
+modify
+replay
+tamper
+cross boundaries
+verify controls
+```
+
+Do not mix them unnecessarily.
+
+---
+
+# 67. API Recon Principle
+
+Same mindset as Nmap.
+
+Networking:
+
+```text
+do not assume ports
+→ discover them
+```
+
+API testing:
+
+```text
+do not assume endpoints
+→ observe them
+```
+
+---
+
+# 68. Labs 01–05 Progression
+
+```text
+Lab 01
+HTTP vs HTTPS
+      ↓
+What crosses the network?
+
+Lab 02
+Docker Exposure
+      ↓
+What is reachable?
+
+Lab 03
+Nmap Enumeration
+      ↓
+What can an attacker discover?
+
+Lab 04
+Firewall Segmentation
+      ↓
+What should the attacker reach?
+
+Lab 05
+API Reconnaissance
+      ↓
+What application surface exists behind HTTPS?
+```
+
+---
+
+# 69. Core Security Engineering Workflow
 
 ```text
 Build / Configure
@@ -1683,67 +1287,9 @@ Remediate
 Verify
 ```
 
-Examples:
-
-```text
-Lab 01
-observe HTTP traffic
-→ enable TLS
-→ verify confidentiality
-```
-
-```text
-Lab 02
-observe Docker exposure
-→ remove unnecessary publishing
-→ verify application still works
-```
-
-```text
-Lab 03
-enumerate services
-→ find version disclosure
-→ harden Nginx
-→ rescan
-```
-
-```text
-Lab 04
-enumerate reachable services
-→ firewall management access
-→ verify SecureBank remains reachable
-→ verify blocked traffic
-```
-
 ---
 
-# 65. Labs 01–04 Progression
-
-```text
-Lab 01
-HTTP vs HTTPS Traffic Analysis
-        ↓
-What information crosses the network?
-        ↓
-Lab 02
-Docker Network Exposure
-        ↓
-What services are exposed?
-        ↓
-Lab 03
-Nmap Service Enumeration
-        ↓
-What can an attacker discover?
-        ↓
-Lab 04
-Host Firewall and Service Segmentation
-        ↓
-What should the attacker actually be allowed to reach?
-```
-
----
-
-# 66. Commands Worth Memorizing
+# 70. Commands / Tools Worth Remembering
 
 Networking:
 
@@ -1751,29 +1297,6 @@ Networking:
 ip addr
 ip route
 ping -c 4 <host>
-```
-
-SSH:
-
-```bash
-ssh user@host
-ssh -o ConnectTimeout=5 user@host
-```
-
-Docker:
-
-```bash
-docker compose ps
-docker compose logs --tail=100
-docker network ls
-docker network inspect <network>
-```
-
-HTTP:
-
-```bash
-curl -k https://host
-curl -k -I https://host
 ```
 
 Nmap:
@@ -1785,17 +1308,31 @@ nmap -sV -p <ports> <host>
 nmap -sC -sV -p <ports> <host>
 ```
 
+HTTP:
+
+```bash
+curl -k https://host
+curl -k -I https://host
+```
+
 TLS:
 
 ```bash
 openssl s_client -connect host:port -servername hostname
 ```
 
+Docker:
+
+```bash
+docker compose ps
+docker compose logs --tail=100
+docker network inspect <network>
+```
+
 Firewall:
 
 ```bash
 sudo ufw status verbose
-sudo ufw status numbered
 sudo journalctl -kf
 ```
 
@@ -1805,46 +1342,46 @@ Sockets:
 sudo ss -ltnp
 ```
 
-Services:
+Burp:
 
-```bash
-sudo systemctl status <service>
+```text
+Proxy → Intercept
+Proxy → HTTP history
+Proxy → Open browser
 ```
 
 ---
 
-# 67. Commands Are Not the Goal
+# 71. Commands Are Not the Objective
 
-Do not memorize tools without understanding why they are being used.
+The important question is not:
 
-Example:
+> Which command should I memorize?
 
-```bash
+It is:
+
+> What security question am I trying to answer?
+
+Examples:
+
+```text
 nmap -p-
 ```
 
-is useful because:
+answers:
 
-> A default scan might miss a service running on a non-standard port.
+> Are services listening outside Nmap's default port set?
 
-Example:
-
-```bash
+```text
 ss -ltnp
 ```
 
-is useful because:
+answers:
 
-> It proves whether a service is still listening locally even when a remote scan shows the port as filtered.
+> Is the service still listening locally?
 
-Example:
+Burp HTTP history answers:
 
-```bash
-journalctl -kf
-```
+> What API surface does the browser actually use?
 
-is useful because:
-
-> It lets you correlate a network test with the defensive telemetry produced by the system.
-
-The important skill is choosing the next command based on the security question being investigated.
+Security tools are evidence-gathering mechanisms rather than the purpose of the lab.

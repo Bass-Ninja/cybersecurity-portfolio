@@ -13,13 +13,14 @@ Rather than serving as a collection of course notes or CTF write-ups, it focuses
 - configure systems
 - generate and analyze network traffic
 - investigate service exposure
-- test security controls
 - enumerate attack surfaces
-- analyze authentication and authorization boundaries
-- investigate vulnerabilities
+- inspect authenticated API behavior
+- map object and trust boundaries
+- test security controls
+- analyze authentication and authorization
 - harden configurations
-- verify remediations
 - inspect defensive telemetry
+- verify remediations
 
 The goal is to connect security theory with observable behavior in real systems and understand not only **what** a security control does, but also **how it behaves, how it can be tested, and how its effectiveness can be verified**.
 
@@ -29,37 +30,42 @@ The goal is to connect security theory with observable behavior in real systems 
 
 [SecureBank](https://github.com/Bass-Ninja/SecureBank) is a security-focused banking application built with ASP.NET Core, PostgreSQL, Keycloak, Nginx, and Docker.
 
-It is used throughout parts of this portfolio as both a realistic target environment and a platform for validating security controls.
+It is used throughout the portfolio as both:
 
-SecureBank provides a practical environment for exploring topics such as:
+```text
+application
++
+security target
+```
 
-- Network traffic analysis
-- TCP/IP and service exposure
-- HTTP and TLS
-- Authentication and authorization
-- Web and API security
-- Identity and access management
-- Docker network security
-- Host firewalling
-- Security monitoring
-- Vulnerability testing
-- Application hardening
-- Secure software development
+SecureBank provides a practical environment for exploring:
+
+- TCP/IP
+- HTTP
+- TLS
+- Docker networking
+- service exposure
+- host firewalling
+- API security
+- authentication
+- authorization
+- OIDC
+- JWT
+- object-level authorization
+- security monitoring
+- application hardening
 - DevSecOps
 
 The application remains in its own repository.
 
-Labs in this portfolio reference the relevant architecture, configuration, methodology, evidence, and security controls without duplicating the full application source.
+The portfolio contains the security methodology, evidence, findings, and writeups generated while assessing it.
 
 ## Security Lab Environment
-
-A dedicated isolated lab environment is used for external testing.
 
 ```text
                     Internet
                        │
                 VirtualBox NAT
-                  │         │
                   │         │
                Kali       Ubuntu
                   │         │
@@ -67,24 +73,16 @@ A dedicated isolated lab environment is used for external testing.
                        │
                 securebank-lab
                 192.168.56.0/24
-                       │
-            ┌──────────┴──────────┐
-            │                     │
-      Kali attacker        SecureBank target
-      192.168.56.10        192.168.56.20
-                                  │
-                                  ▼
-                               Docker
 ```
 
-The attacker VM uses:
+Attacker:
 
 ```text
 Kali Linux
 192.168.56.10
 ```
 
-The target VM uses:
+Target:
 
 ```text
 Ubuntu Server
@@ -92,26 +90,20 @@ Ubuntu Server
 securebank.lab
 ```
 
-The SecureBank application is exposed to the attacker through:
+Application:
 
 ```text
 https://securebank.lab:3443
 ```
 
-Backend services remain inside the Docker network unless a lab explicitly changes that configuration.
-
-The Ubuntu target also uses host firewall rules to distinguish between the intended public application surface and management access.
-
-Current externally observed behavior from Kali is:
+Current external service state from Kali:
 
 ```text
 22/tcp   filtered
 3443/tcp open
 ```
 
-SecureBank remains reachable, while SSH management access is blocked from the attacker-facing lab interface.
-
-This makes it possible to test SecureBank from an external perspective without exposing the environment to the normal home network.
+Backend services remain inside Docker.
 
 ## Labs
 
@@ -119,354 +111,323 @@ This makes it possible to test SecureBank from an external perspective without e
 
 | Lab | Technologies | Topics |
 | --- | --- | --- |
-| [01 — HTTP vs HTTPS Traffic Analysis](./network-security/01-http-vs-https-traffic-analysis/) | Wireshark, TCP/IP, HTTP, TLS 1.3, Docker | TCP analysis, plaintext exposure, TLS negotiation, encrypted application traffic |
+| [01 — HTTP vs HTTPS Traffic Analysis](./network-security/01-http-vs-https-traffic-analysis/) | Wireshark, TCP/IP, HTTP, TLS 1.3, Docker | TCP analysis, plaintext exposure, TLS negotiation, encrypted traffic |
 | [02 — Docker Network Exposure](./network-security/02-docker-network-exposure/) | Docker, Docker Compose, PowerShell, TCP/IP | Port publishing, loopback binding, container networking, attack-surface reduction |
-| [03 — Nmap Service Enumeration](./network-security/03-nmap-service-enumeration/) | Kali Linux, Nmap, curl, OpenSSL, Nginx | Full TCP discovery, service fingerprinting, TLS enumeration, HTTP metadata, remediation verification |
-| [04 — Host Firewall and Service Segmentation](./network-security/04-firewall-and-segmentation/) | UFW, Linux, Nmap, SSH, curl | Default-deny firewalling, management-plane filtering, service segmentation, firewall logging, verification |
+| [03 — Nmap Service Enumeration](./network-security/03-nmap-service-enumeration/) | Kali Linux, Nmap, curl, OpenSSL, Nginx | Full-port discovery, fingerprinting, TLS enumeration, HTTP metadata |
+| [04 — Host Firewall and Service Segmentation](./network-security/04-firewall-and-segmentation/) | UFW, Linux, Nmap, SSH, curl | Default deny, management-plane filtering, firewall logging, verification |
+
+### Web & API Security
+
+| Lab | Technologies | Topics |
+| --- | --- | --- |
+| [01 — API Reconnaissance and Attack-Surface Mapping](./web-api-security/01-api-recon-and-attack-surface/) | Burp Suite, HTTP, REST, JWT, Keycloak | Authenticated reconnaissance, endpoint discovery, object mapping, authorization-boundary identification |
 
 ### Reference Material
 
-- [Networking & Security Lab Cheatsheet](./network-security/CHEATSHEET.md)
-
-Additional labs will be added as the portfolio develops.
+- [Cybersecurity Lab Cheatsheet](./network-security/CHEATSHEET.md)
 
 ## Lab Approach
 
-Where appropriate, labs follow a common security engineering workflow:
+The recurring workflow is:
 
 **Build / Configure → Observe → Test → Analyze → Remediate → Verify**
 
-Depending on the experiment, labs may include:
+Depending on the lab, evidence may include:
 
-- architecture and environment
-- security objective or hypothesis
-- configuration and methodology
-- network observations
-- attack-surface discovery
-- controlled attack or abuse scenarios
-- security findings
-- packet, HTTP, TLS, firewall, or log evidence
-- mitigation or hardening
-- verification testing
-- lessons learned
-
-The focus is on understanding the complete security lifecycle rather than simply demonstrating individual commands or tools.
+- packet captures
+- Nmap output
+- HTTP requests
+- HTTP responses
+- TLS metadata
+- firewall events
+- API bodies
+- JWT claims
+- application logs
+- SIEM events
 
 ## Current Lab Progression
 
-The initial network-security labs deliberately build on one another.
-
 ```text
 Lab 01
-HTTP vs HTTPS traffic analysis
-        │
-        ▼
-Understand what crosses the network
-        │
-        ▼
+HTTP vs HTTPS
+      │
+      ▼
+What crosses the network?
+      │
+      ▼
 Lab 02
-Docker network exposure
-        │
-        ▼
-Understand what is reachable
-        │
-        ▼
+Docker Network Exposure
+      │
+      ▼
+What is reachable?
+      │
+      ▼
 Lab 03
-Nmap service enumeration
-        │
-        ▼
-Understand what an attacker can discover
-        │
-        ▼
+Nmap Enumeration
+      │
+      ▼
+What can an attacker discover?
+      │
+      ▼
 Lab 04
-Host firewall and service segmentation
-        │
-        ▼
-Understand what the attacker should actually be allowed to reach
+Host Firewall and Service Segmentation
+      │
+      ▼
+What should be reachable?
+      │
+      ▼
+Lab 05
+API Reconnaissance
+      │
+      ▼
+What application surface exists behind HTTPS?
+      │
+      ▼
+Next:
+BOLA / IDOR Testing
 ```
 
-This progression moves from observing network communication to understanding attack surface, external reconnaissance, access control, and defensive visibility.
+The progression deliberately moves upward through the stack rather than treating tools as unrelated exercises.
 
 ## Completed Concepts
 
-The portfolio currently includes hands-on work with:
-
 ### Network Traffic Analysis
 
-- TCP three-way handshake
-- TCP sequence and acknowledgement numbers
-- IPv6 loopback traffic
-- HTTP request and response inspection
+- TCP handshake
+- sequence and acknowledgement numbers
+- HTTP inspection
 - plaintext bearer-token exposure
-- TLS 1.3 negotiation
+- TLS negotiation
 - encrypted application traffic
-- observable TLS/network metadata
-- Wireshark filtering and TCP stream reconstruction
+- observable network metadata
+- Wireshark filters
+- TCP stream reconstruction
 
 ### Docker Networking
 
 - host port publishing
-- loopback-only port binding
-- all-interface port binding
-- Docker bridge networking
-- internal container DNS
-- container-to-container communication
-- internal-only service exposure
-- PostgreSQL host-port removal
-- attack-surface reduction
-- verification after hardening
+- loopback binding
+- all-interface binding
+- bridge networking
+- Docker DNS
+- internal container communication
+- database exposure reduction
+- host attack-surface reduction
 
-### Reconnaissance and Enumeration
+### Reconnaissance
 
-- Nmap default scans
-- full TCP port scans
+- default Nmap scanning
+- full TCP scanning
 - service/version detection
-- Nmap default NSE scripts
-- HTTP service enumeration
+- NSE scripts
 - TLS certificate enumeration
-- TLS cipher enumeration
-- OpenSSL connection inspection
-- HTTP header inspection
-- software-version disclosure analysis
-- remediation and rescanning
+- cipher enumeration
+- OpenSSL inspection
+- HTTP header analysis
 
-### Host Firewalling and Service Segmentation
+### Firewalling
 
-- UFW default policies
-- interface-specific firewall rules
-- allowing intended public services
-- filtering management-plane access
-- Nmap `open`, `closed`, and `filtered` states
-- SSH reachability testing
-- Linux socket inspection
-- systemd service verification
+- default-deny inbound policy
+- interface-specific rules
+- management-plane filtering
+- Nmap filtered-state verification
+- service-state verification
 - firewall logging
-- blocked-connection telemetry
-- distinction between service state and network reachability
+- prevention vs visibility
+
+### API Reconnaissance
+
+- Burp Proxy
+- HTTP history
+- authenticated reconnaissance
+- OIDC flow observation
+- Bearer JWT inspection
+- endpoint discovery
+- request-body analysis
+- query-parameter mapping
+- object identifier mapping
+- object-relationship mapping
+- authorization-boundary identification
+- replay/idempotency candidate identification
 
 ## Example Security Engineering Findings
 
-The labs are designed to produce concrete observations rather than only demonstrate tooling.
-
-Examples so far include:
-
 ### Plaintext HTTP Exposure
 
-A SecureBank API request transmitted over HTTP exposed:
+HTTP exposed:
 
-- the request path
-- HTTP headers
-- the Authorization header
-- the bearer token
-- response contents
+- request path
+- headers
+- bearer token
+- response data
 
-The same request was repeated after enabling TLS and the application data was no longer readable through passive packet inspection.
+TLS prevented passive inspection of application contents.
 
-### Unnecessary PostgreSQL Host Exposure
+### PostgreSQL Host Exposure
 
-PostgreSQL was initially published to the host for local debugging.
+The host database mapping was unnecessary once both the API and database ran inside Docker.
 
-Testing demonstrated that once the API and database were both containerized, the API could communicate directly with:
+It was removed while preserving:
 
 ```text
-postgres:5432
+api → postgres:5432
 ```
-
-The host mapping was removed and application functionality remained intact.
 
 ### Nginx Version Disclosure
 
-External enumeration returned:
+Before:
 
 ```text
 Server: nginx/1.29.8
 ```
 
-Nginx was hardened using:
-
-```nginx
-server_tokens off;
-```
-
-The result was verified:
+After:
 
 ```text
 Server: nginx
 ```
 
-The exact version was no longer disclosed in normal HTTP responses.
+### SSH Management Exposure
 
-### SSH Management-Plane Exposure
-
-Initial external enumeration from Kali showed:
+Before:
 
 ```text
-22/tcp   open
-3443/tcp open
+22/tcp open
 ```
 
-SSH was reachable from the same lab network as the attacker VM.
-
-The Ubuntu target was hardened with UFW using a default-deny incoming policy.
-
-SecureBank HTTPS remained explicitly allowed:
-
-```bash
-sudo ufw allow in on enp0s8 to any port 3443 proto tcp
-```
-
-SSH was blocked and logged on the attacker-facing interface:
-
-```bash
-sudo ufw deny in on enp0s8 log proto tcp to any port 22
-```
-
-After remediation:
+After UFW:
 
 ```text
-22/tcp   filtered
-3443/tcp open
+22/tcp filtered
 ```
 
-SecureBank continued to return:
+while:
 
 ```text
-HTTP/1.1 200 OK
+sshd remains active
 ```
 
-while the SSH daemon remained active and listening locally.
+### API Object Authorization Boundaries
 
-This demonstrated that network reachability can be reduced without disabling the underlying service.
-
-### Firewall Telemetry
-
-Blocked SSH attempts from Kali generated firewall events containing fields such as:
+Burp reconnaissance identified:
 
 ```text
-SRC=192.168.56.10
-DST=192.168.56.20
-DPT=22
-PROTO=TCP
+POST /api/transfers
+→ sourceAccountId
 ```
 
-This showed that the same control could provide both:
+and:
 
 ```text
-prevention
-+
-visibility
+DELETE /api/beneficiaries/{id}
+→ beneficiaryId
 ```
 
-and established a foundation for later SIEM and detection-engineering labs.
+as client-controlled resource identifiers requiring server-side ownership checks.
+
+### Transfer Replay Boundary
+
+Transfer requests include:
+
+```http
+Idempotency-Key: <UUID>
+```
+
+providing a separate future test for replay resistance.
 
 ## Current Focus
 
-I'm currently developing deeper practical knowledge in:
+Current study areas include:
 
-- Networking and network security
-- Linux networking
-- Service enumeration
-- Host firewalling
-- Web and API security
-- Identity and access management
-- Security monitoring and SIEM
-- Detection engineering
-- Endpoint security
-- Secure software development
+- networking
+- Linux
+- service enumeration
+- host firewalling
+- web/API security
+- Burp Suite
+- authentication
+- authorization
+- IAM
+- JWT/OIDC
+- SIEM
+- detection engineering
+- secure software development
 - DevSecOps
 
 ## Planned Lab Areas
 
-### Network Security
+### Web & API Security
 
-Completed foundational work includes:
+Next:
 
-- HTTP vs HTTPS traffic analysis
-- Docker service exposure
-- full TCP service enumeration
-- TLS and HTTP metadata enumeration
-- host firewall configuration
-- management-plane filtering
-- verification of filtered versus open ports
-- firewall logging
-
-Future network-security extensions may include:
-
-- packet-level analysis of firewall behavior
-- `DROP` versus `REJECT` behavior
-- dedicated management networks
-- separate attacker and management subnets
-- routed security zones
-- VLAN-based segmentation
-- firewall policy between subnets
-- forwarding firewall telemetry into a SIEM
-
-### Web and API Security
-
-Planned work includes:
-
-- API reconnaissance
 - BOLA/IDOR testing
+- transfer-source ownership tests
+- beneficiary ownership tests
 - broken function-level authorization
 - JWT validation
+- replay/idempotency
 - rate limiting
-- replay behavior
-- input validation
-- mass-assignment testing
-- Burp Suite API testing
-- CORS and security-header analysis
+- malformed input
+- CORS
+- security headers
 
-### Identity and Access Management
+### Identity and Access
 
-Planned work includes:
+Planned:
 
-- Keycloak realm hardening
-- role-based access-control testing
-- OIDC Authorization Code + PKCE flow analysis
-- authentication versus authorization testing
-- token-claim inspection
+- Keycloak hardening
+- role testing
+- OIDC/PKCE analysis
+- authentication vs authorization
+- token claim validation
 
 ### Security Monitoring
 
-Planned work includes:
+Planned:
 
 - API audit logging
-- Wazuh SecureBank monitoring
+- Wazuh ingestion
 - firewall-log ingestion
-- suspicious-login detection
+- login detection
 - API enumeration detection
-- repeated authorization-failure detection
-- blocked management-access detection
-- incident investigation and reporting
+- authorization-failure detection
+- incident investigation
 
 ### DevSecOps
 
-Planned work includes:
+Planned:
 
 - secret scanning
 - dependency scanning
 - container scanning
 - static analysis
 - GitHub Actions security gates
-- dynamic application security testing
-- software bill of materials generation
+- DAST
+- SBOM generation
+
+### Network Security Extensions
+
+Potential future work:
+
+- firewall packet analysis
+- DROP vs REJECT
+- separate management subnet
+- routed zones
+- VLAN segmentation
 
 ### Windows / Active Directory
 
-A future Windows/Active Directory environment will cover:
+Future environment:
 
 - domains
-- users and groups
+- users/groups
 - Group Policy
-- authentication events
-- Windows Event Logs
-- privileged-group changes
-- PowerShell activity
+- Windows authentication events
+- PowerShell
+- privileged changes
 - SIEM integration
 
 ## Portfolio Structure
-
-The repository will grow approximately as:
 
 ```text
 cybersecurity-portfolio/
@@ -526,64 +487,58 @@ cybersecurity-portfolio/
     └── reflections/
 ```
 
-Directories are added as labs are actually performed rather than pre-populated with empty writeups.
+Directories are added as the labs are actually performed.
 
 ## Documentation Philosophy
 
-Each lab should answer a specific security question.
+Every lab should answer a security question.
 
-Examples:
+Good examples:
 
-> Can a passive observer read an Authorization bearer token over HTTP?
+> Can a passive observer read a bearer token over HTTP?
 
-> Can another machine reach a Docker service bound only to loopback?
+> Can another host reach a Docker service bound only to loopback?
 
-> Can the API reach PostgreSQL without exposing the database to the host?
+> What services can an attacker discover without prior architecture knowledge?
 
-> What services can an attacker discover without knowing the architecture?
+> Can SecureBank stay reachable while SSH management access is blocked?
 
-> Does a remediation actually change the externally observable result?
+> What API objects and authorization boundaries can an authenticated tester discover?
 
-> Can the public application remain reachable while management access is blocked?
-
-> Is a blocked service actually stopped, or only inaccessible because of a firewall?
-
-This is preferred over tool-centric writeups such as:
-
-> Learning Wireshark.
-
-or:
+Less useful framing:
 
 > Learning Nmap.
 
-or:
+> Learning Burp.
 
 > Learning UFW.
 
-Tools are used to answer security questions rather than being the objective themselves.
+Tools are mechanisms for answering security questions.
 
 ## Ethical Scope
 
-All offensive security testing documented in this repository is performed against:
+Testing is restricted to:
 
 - systems I own
-- intentionally created lab environments
-- applications where explicit authorization has been granted
+- intentionally created labs
+- environments where explicit authorization exists
 
-The isolated Kali/Ubuntu environment is specifically designed to support controlled security testing without targeting unrelated systems.
+The Kali/Ubuntu environment is deliberately isolated for controlled security testing.
 
 ## Goal
 
-The goal of this portfolio is to document the transition from backend software engineering into security engineering by demonstrating practical experience across both sides of the security boundary:
+The portfolio documents the transition from backend development into security engineering by demonstrating both sides of a system:
 
 ```text
 Build
   +
-Understand architecture
-  +
-Attack / test
+Understand
   +
 Observe
+  +
+Enumerate
+  +
+Attack / test
   +
 Detect
   +
@@ -592,4 +547,4 @@ Remediate
 Verify
 ```
 
-Rather than treating development and cybersecurity as separate disciplines, the portfolio focuses on how software design, networking, identity, offensive testing, monitoring, and defensive engineering interact in real systems.
+The goal is not to separate development and security, but to understand how architecture, code, networking, identity, offensive testing, monitoring, and defensive controls interact.
