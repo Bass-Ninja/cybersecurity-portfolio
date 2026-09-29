@@ -1,8 +1,16 @@
 # Cybersecurity Lab Cheatsheet
 
-Quick-reference notes collected while building, observing, testing, and hardening the SecureBank cybersecurity lab.
+Quick-reference notes for the SecureBank cybersecurity lab.
 
-This document is intended as a practical personal reference for commands, concepts, security-testing workflows, and mental models encountered during the labs.
+Use this file for:
+
+- commands
+- observed configuration
+- testing patterns
+- short security concepts
+- troubleshooting reminders
+
+Detailed methodology, evidence, and conclusions belong in individual lab READMEs.
 
 ---
 
@@ -12,19 +20,18 @@ This document is intended as a practical personal reference for commands, concep
                          Internet
                             │
                      VirtualBox NAT
-                      │           │
-                      │           │
-                   Kali        Ubuntu
-                      │           │
-                 eth1 │           │ enp0s8
-          192.168.56.10           192.168.56.20
-                      └─────┬─────┘
-                            │
-                     securebank-lab
-                     192.168.56.0/24
-                            │
-                            ▼
-                    SecureBank Docker
+                       │          │
+                    Kali        Ubuntu
+                       │          │
+                  eth1 │          │ enp0s8
+            192.168.56.10         192.168.56.20
+                       └─────┬────┘
+                             │
+                      securebank-lab
+                      192.168.56.0/24
+                             │
+                             ▼
+                      SecureBank Docker
 ```
 
 ## Kali
@@ -45,11 +52,17 @@ Hostname: securebank-target
 Lab hostname: securebank.lab
 ```
 
+## Application
+
+```text
+https://securebank.lab:3443
+```
+
 ---
 
-# 2. VirtualBox Network Model
+# 2. VirtualBox Networking
 
-## NAT Adapter
+## NAT
 
 Provides Internet access.
 
@@ -63,123 +76,48 @@ VirtualBox NAT
 Internet
 ```
 
-## Internal Network
-
-Provides isolated communication between lab VMs.
+## Host-Only Lab Network
 
 ```text
 Kali 192.168.56.10
         │
         ▼
-securebank-lab
+192.168.56.0/24
         │
         ▼
 Ubuntu 192.168.56.20
 ```
 
-No gateway is required on the internal interface.
+No default gateway is needed on the lab-only interface.
 
----
-
-# 3. Docker Networking Mental Model
+Mental model:
 
 ```text
-container listening
-≠
-host port published
-```
+default route
+→ NAT interface
 
-A service may exist inside Docker without being remotely reachable.
-
----
-
-# 4. Docker Port Publishing
-
-```yaml
-ports:
-  - "8080:8080"
-```
-
-means:
-
-```text
-host:8080
-    ↓
-container:8080
+192.168.56.0/24
+→ lab interface
 ```
 
 ---
 
-# 5. Loopback-Only Docker Binding
-
-```yaml
-ports:
-  - "127.0.0.1:8080:8080"
-```
-
-means:
+# 3. SecureBank Exposure Model
 
 ```text
-localhost:8080
-      ↓
-container:8080
-```
-
-Another machine cannot normally connect to the host LAN/lab address on that port.
-
----
-
-# 6. All-Interface Docker Binding
-
-```yaml
-ports:
-  - "8080:8080"
-```
-
-often appears as:
-
-```text
-0.0.0.0:8080
-[::]:8080
-```
-
-This exposes the service on host interfaces unless another firewall blocks it.
-
----
-
-# 7. Internal-Only Container Service
-
-No `ports:` entry is needed for container-to-container traffic.
-
-```text
-web → api:8080
-
-api → postgres:5432
-
-api → keycloak:8080
-```
-
-Key rule:
-
-> Publish a host port only when something outside the Docker network requires direct access.
-
----
-
-# 8. SecureBank Exposure Model
-
-```text
-External client / Kali
-          │
-          ▼
-      Nginx :3443
-          │
-     Docker network
-       ┌──┴───────┐
-       ▼          ▼
-      API      Keycloak
-       │
-       ▼
-   PostgreSQL
+Kali / external client
+        │
+        ▼
+    Nginx :3443
+        │
+        ▼
+   Docker network
+     ┌──┴───────┐
+     ▼          ▼
+    API      Keycloak
+     │
+     ▼
+ PostgreSQL
 ```
 
 | Port | Service | Exposure |
@@ -191,44 +129,86 @@ External client / Kali
 | `8081` | Keycloak HTTP | Loopback |
 | `5432` | PostgreSQL | Docker only |
 
+Key rule:
+
+```text
+container listening
+≠
+host port published
+≠
+remotely reachable
+```
+
+Publish a host port only when something outside the Docker network needs direct access.
+
 ---
 
-# 9. Docker Commands
+# 4. Docker Port Publishing
+
+## All Interfaces
+
+```yaml
+ports:
+  - "8080:8080"
+```
+
+Usually means:
+
+```text
+0.0.0.0:8080
+[::]:8080
+```
+
+Potentially reachable from other hosts unless a firewall blocks it.
+
+## Loopback Only
+
+```yaml
+ports:
+  - "127.0.0.1:8080:8080"
+```
+
+Means:
+
+```text
+localhost:8080
+    ↓
+container:8080
+```
+
+Other machines cannot normally connect through the host's lab/LAN address.
+
+## Internal Only
+
+No `ports:` entry required.
+
+```text
+web → api:8080
+api → postgres:5432
+api → keycloak:8080
+```
+
+---
+
+# 5. Docker Commands
 
 ```bash
 docker ps
 docker compose ps
+
 docker compose up -d
 docker compose up -d --build
+
 docker compose down
+
 docker compose logs --tail=100
 docker compose logs -f api
+
 docker network ls
 docker network inspect <network>
 ```
 
----
-
-# 10. SecureBank Lab Compose
-
-Local:
-
-```bash
-docker compose up -d --build
-```
-
-Lab:
-
-```bash
-docker compose \
-  -f docker-compose.yml \
-  -f docker-compose.lab.yml \
-  up -d --build
-```
-
----
-
-# 11. Docker Exec
+## Exec
 
 ```bash
 docker exec <container> <command>
@@ -243,70 +223,124 @@ docker exec securebank-web \
 
 ---
 
-# 12. Windows TCP Testing
+# 6. SecureBank Compose
 
-```powershell
-Get-NetTCPConnection -State Listen
+## Local
+
+```bash
+docker compose up -d --build
 ```
 
-```powershell
-Test-NetConnection localhost -Port 15432
+## Lab
+
+Always include the lab override when running SecureBank on the Ubuntu target:
+
+```bash
+docker compose \
+  -f docker-compose.yml \
+  -f docker-compose.lab.yml \
+  up -d --build
+```
+
+Rebuild only the frontend when changing Nginx/frontend configuration:
+
+```bash
+docker compose \
+  -f docker-compose.yml \
+  -f docker-compose.lab.yml \
+  up -d --build web
 ```
 
 Important:
 
 ```text
-TcpTestSucceeded
+forgetting docker-compose.lab.yml
+→ wrong external hostname/proxy behavior
+→ Keycloak may generate localhost URLs
 ```
 
 ---
 
-# 13. Linux Network Interfaces
+# 7. Linux Networking
+
+## Interfaces
 
 ```bash
 ip addr
+ip -br addr
 ```
 
-Specific:
+Specific interface:
 
 ```bash
 ip addr show enp0s8
 ```
 
----
-
-# 14. Routing
+## Routes
 
 ```bash
 ip route
 ```
 
-Mental model:
+## Connectivity
 
-```text
-default route → NAT
+```bash
+ping -c 4 192.168.56.20
+ping securebank.lab
+```
 
-192.168.56.0/24 → lab interface
+## Listening Ports
+
+```bash
+sudo ss -ltnp
+```
+
+Specific port:
+
+```bash
+sudo ss -ltnp | grep :22
 ```
 
 ---
 
-# 15. Persistent Kali IP
+# 8. Persistent Kali Lab IP
+
+View connections:
 
 ```bash
 nmcli connection show
 ```
 
+Static lab address:
+
 ```bash
-sudo nmcli connection modify eth1 \
+sudo nmcli connection modify <connection> \
   ipv4.method manual \
   ipv4.addresses 192.168.56.10/24 \
-  ipv4.gateway ""
+  ipv4.gateway "" \
+  ipv4.dns ""
+```
+
+Bring connection back up:
+
+```bash
+sudo nmcli connection down <connection>
+sudo nmcli connection up <connection>
+```
+
+Lab interface should have:
+
+```text
+192.168.56.10/24
+no gateway
+no DNS
 ```
 
 ---
 
-# 16. Ubuntu Netplan
+# 9. Ubuntu Netplan
+
+Example:
 
 ```yaml
 network:
@@ -314,11 +348,14 @@ network:
   ethernets:
     enp0s3:
       dhcp4: true
+
     enp0s8:
       dhcp4: false
       addresses:
         - 192.168.56.20/24
 ```
+
+Apply:
 
 ```bash
 sudo netplan try
@@ -327,11 +364,13 @@ sudo netplan apply
 
 ---
 
-# 17. Connectivity
+# 10. Hosts File
 
-```bash
-ping -c 4 192.168.56.20
+```text
+192.168.56.20 securebank.lab
 ```
+
+Test:
 
 ```bash
 ping securebank.lab
@@ -339,15 +378,7 @@ ping securebank.lab
 
 ---
 
-# 18. Hosts File
-
-```text
-192.168.56.20 securebank.lab
-```
-
----
-
-# 19. SSH
+# 11. SSH
 
 Install:
 
@@ -359,6 +390,12 @@ Enable:
 
 ```bash
 sudo systemctl enable --now ssh
+```
+
+Status:
+
+```bash
+sudo systemctl status ssh --no-pager
 ```
 
 Connect:
@@ -373,9 +410,172 @@ Short timeout:
 ssh -o ConnectTimeout=5 nina@192.168.56.20
 ```
 
+Mental model:
+
+```text
+sshd running
+≠
+SSH remotely reachable
+```
+
+A firewall can block access while the service remains active.
+
 ---
 
-# 20. HTTP Testing
+# 12. UFW
+
+## Status
+
+```bash
+sudo ufw status verbose
+sudo ufw status numbered
+```
+
+## Defaults
+
+```bash
+sudo ufw default deny incoming
+sudo ufw default allow outgoing
+```
+
+## Allow SecureBank
+
+```bash
+sudo ufw allow in on enp0s8 to any port 3443 proto tcp
+```
+
+## Deny and Log SSH
+
+```bash
+sudo ufw deny in on enp0s8 log proto tcp to any port 22
+```
+
+## Enable
+
+```bash
+sudo ufw enable
+```
+
+Important:
+
+```text
+firewall filtering
+≠
+service shutdown
+```
+
+and:
+
+```text
+block + log
+=
+prevention + visibility
+```
+
+Keep console access available when changing firewall rules remotely.
+
+---
+
+# 13. Firewall Logs
+
+Live kernel log:
+
+```bash
+sudo journalctl -kf
+```
+
+Search UFW entries:
+
+```bash
+sudo journalctl -k | grep UFW
+```
+
+Useful fields:
+
+```text
+SRC
+DST
+SPT
+DPT
+PROTO
+```
+
+---
+
+# 14. Nmap
+
+## Default Scan
+
+```bash
+nmap 192.168.56.20
+```
+
+Does not scan all TCP ports.
+
+## Full TCP Scan
+
+```bash
+nmap -p- 192.168.56.20
+```
+
+Scans:
+
+```text
+1–65535
+```
+
+## Version Detection
+
+```bash
+nmap -sV -p 22,3443 192.168.56.20
+```
+
+## Default NSE Scripts
+
+```bash
+nmap -sC -sV -p 22,3443 192.168.56.20
+```
+
+## TLS Scripts
+
+```bash
+nmap -p 3443 \
+  --script ssl-cert,ssl-enum-ciphers \
+  192.168.56.20
+```
+
+---
+
+# 15. Nmap Port States
+
+```text
+open
+→ service reachable
+```
+
+```text
+closed
+→ host responds but no service accepts connections
+```
+
+```text
+filtered
+→ filtering prevents Nmap from determining normal service state
+```
+
+Important:
+
+```text
+service running
+≠
+port open remotely
+```
+
+---
+
+# 16. HTTP Testing with curl
+
+Basic:
 
 ```bash
 curl http://host/path
@@ -387,21 +587,37 @@ HTTPS:
 curl https://host/path
 ```
 
-Self-signed lab certificate:
+Ignore self-signed certificate validation:
 
 ```bash
 curl -k https://securebank.lab:3443
 ```
 
-Headers:
+Headers only:
 
 ```bash
 curl -k -I https://securebank.lab:3443
 ```
 
+Show response headers + body:
+
+```bash
+curl -k -i https://securebank.lab:3443/path
+```
+
+Compare suspicious paths:
+
+```bash
+curl -k -i https://securebank.lab:3443/admin
+curl -k -i https://securebank.lab:3443/actuator
+curl -k -i https://securebank.lab:3443/this-does-not-exist
+```
+
+Useful for validating scanner findings.
+
 ---
 
-# 21. HTTP vs HTTPS
+# 17. HTTP vs HTTPS
 
 HTTP:
 
@@ -421,49 +637,11 @@ TLS
 HTTP
 ```
 
-HTTPS protects application payloads.
+HTTPS protects application contents in transit.
 
 Network metadata remains visible.
 
----
-
-# 22. TCP Handshake
-
-```text
-SYN
- ↓
-SYN/ACK
- ↓
-ACK
-```
-
----
-
-# 23. Wireshark Filters
-
-```text
-tcp
-http
-tls
-dns
-icmp
-tcp.port == 8080
-ip.addr == 192.168.56.20
-```
-
----
-
-# 24. Follow TCP Stream
-
-```text
-Right-click packet
-→ Follow
-→ TCP Stream
-```
-
----
-
-# 25. Lab 01 Lesson
+Mental model:
 
 ```text
 authentication
@@ -485,57 +663,42 @@ encrypted in transit
 
 ---
 
-# 26. Nmap Default Scan
-
-```bash
-nmap 192.168.56.20
-```
-
-A default scan does not scan every TCP port.
-
----
-
-# 27. Full TCP Scan
-
-```bash
-nmap -p- 192.168.56.20
-```
-
-Scans:
+# 18. TCP Handshake
 
 ```text
-1–65535
+SYN
+ ↓
+SYN/ACK
+ ↓
+ACK
 ```
 
 ---
 
-# 28. Version Detection
+# 19. Wireshark Filters
 
-```bash
-nmap -sV -p 22,3443 192.168.56.20
+```text
+tcp
+http
+tls
+dns
+icmp
+
+tcp.port == 8080
+ip.addr == 192.168.56.20
+```
+
+Follow stream:
+
+```text
+Right-click packet
+→ Follow
+→ TCP Stream
 ```
 
 ---
 
-# 29. Default NSE Scripts
-
-```bash
-nmap -sC -sV -p 22,3443 192.168.56.20
-```
-
----
-
-# 30. TLS Nmap Scripts
-
-```bash
-nmap -p 3443 \
-  --script ssl-cert,ssl-enum-ciphers \
-  192.168.56.20
-```
-
----
-
-# 31. OpenSSL TLS Inspection
+# 20. TLS with OpenSSL
 
 ```bash
 openssl s_client \
@@ -543,37 +706,35 @@ openssl s_client \
   -servername securebank.lab
 ```
 
-Observed:
+Observed in lab:
 
 ```text
 TLSv1.3
 TLS_AES_256_GCM_SHA384
 ```
 
----
-
-# 32. Self-Signed Certificate
+Self-signed certificate:
 
 ```text
 Verify return code: 18
 ```
 
-Expected in this controlled lab.
+Expected in the controlled lab.
 
 ---
 
-# 33. Nginx Version Disclosure
-
-Before:
-
-```text
-Server: nginx/1.29.8
-```
+# 21. Nginx Version Disclosure
 
 Hardening:
 
 ```nginx
 server_tokens off;
+```
+
+Before:
+
+```text
+Server: nginx/1.29.8
 ```
 
 After:
@@ -584,164 +745,153 @@ Server: nginx
 
 ---
 
-# 34. Lab 02 Lesson
+# 22. Nginx SPA Routing
+
+Typical SPA fallback:
+
+```nginx
+location / {
+    try_files $uri $uri/ /index.html;
+}
+```
+
+Problem:
 
 ```text
-container listening
+unknown path
+→ index.html
+→ HTTP 200
+```
+
+This can create scanner false positives.
+
+Example:
+
+```text
+/admin
+/actuator
+/random-nonexistent-route
+```
+
+may all return the same SPA shell.
+
+Mental model:
+
+```text
+HTTP 200
 ≠
-remotely exposed
+resource actually exists
 ```
 
 ---
 
-# 35. Lab 03 Lesson
+# 23. File-Like SPA Requests
+
+To avoid serving the SPA for missing file-like resources:
+
+```nginx
+location ~ \.[^/]+$ {
+    try_files $uri =404;
+}
+```
+
+Then:
 
 ```text
-service running
+missing .js / .css / .war / .tar / .pem / etc.
+→ 404
+```
+
+instead of:
+
+```text
+→ index.html
+→ 200
+```
+
+Caveat:
+
+```text
+SPA routes containing dots
+may be treated as file requests
+```
+
+---
+
+# 24. Nginx Location Precedence
+
+Regex locations can override ordinary prefix locations.
+
+For proxied paths that must win over regex matches:
+
+```nginx
+location ^~ /api/ {
+    ...
+}
+
+location ^~ /auth/ {
+    ...
+}
+```
+
+Useful mental model:
+
+```text
+^~ prefix
+→ stop regex location matching
+```
+
+This prevents Keycloak static resources such as:
+
+```text
+/auth/resources/.../styles.css
+```
+
+from being mistaken for local frontend files.
+
+---
+
+# 25. Nginx Security Header Gotcha
+
+`add_header` behavior depends on location matching and inheritance.
+
+A request may internally redirect:
+
+```text
+/
+→ /index.html
+→ different location
+```
+
+and headers can disappear if they are only defined in the original location.
+
+Verify after configuration changes:
+
+```bash
+curl -k -I https://securebank.lab:3443/
+```
+
+Frontend headers used in the lab include:
+
+```text
+X-Content-Type-Options
+X-Frame-Options
+Referrer-Policy
+Permissions-Policy
+Content-Security-Policy
+```
+
+Do not blindly apply the frontend CSP to Keycloak.
+
+```text
+SecureBank frontend CSP
 ≠
-discovered by default scan
-```
-
-Enumeration should be progressive.
-
----
-
-# 36. UFW Status
-
-```bash
-sudo ufw status verbose
-sudo ufw status numbered
+Keycloak CSP requirements
 ```
 
 ---
 
-# 37. UFW Defaults
-
-```bash
-sudo ufw default deny incoming
-sudo ufw default allow outgoing
-```
-
----
-
-# 38. Allow SecureBank
-
-```bash
-sudo ufw allow in on enp0s8 to any port 3443 proto tcp
-```
-
----
-
-# 39. Block and Log SSH
-
-```bash
-sudo ufw deny in on enp0s8 log proto tcp to any port 22
-```
-
----
-
-# 40. Enable UFW
-
-```bash
-sudo ufw enable
-```
-
-Always keep console access available when modifying firewall rules over SSH.
-
----
-
-# 41. Nmap Port States
-
-```text
-open
-→ service reachable
-```
-
-```text
-closed
-→ host responds, no service listening
-```
-
-```text
-filtered
-→ firewall/filter prevents normal determination
-```
-
----
-
-# 42. Check Listening Ports
-
-```bash
-sudo ss -ltnp
-```
-
-Specific:
-
-```bash
-sudo ss -ltnp | grep :22
-```
-
----
-
-# 43. Service State
-
-```bash
-sudo systemctl status ssh --no-pager
-```
-
-Important:
-
-```text
-service running
-≠
-remotely reachable
-```
-
----
-
-# 44. Firewall Logs
-
-```bash
-sudo journalctl -kf
-```
-
-Search:
-
-```bash
-sudo journalctl -k | grep UFW
-```
-
-Useful fields:
-
-```text
-SRC
-DST
-SPT
-DPT
-PROTO
-```
-
----
-
-# 45. Lab 04 Lesson
-
-```text
-firewall filtering
-≠
-service shutdown
-```
-
-And:
-
-```text
-block + log
-=
-prevention + visibility
-```
-
----
-
-# 46. Burp Suite
+# 26. Burp Suite
 
 Start:
 
@@ -754,27 +904,28 @@ Useful areas:
 ```text
 Proxy
 ├── Intercept
-└── HTTP history
+├── HTTP history
+└── Open browser
+
+Repeater
 ```
 
 ---
 
-# 47. Burp Integrated Browser
-
-Use:
+# 27. Burp Integrated Browser
 
 ```text
 Proxy
 → Open browser
 ```
 
-This avoids manually configuring a separate browser proxy for basic labs.
+Useful because proxy configuration is already integrated.
 
 ---
 
-# 48. Burp Intercept
+# 28. Burp Intercept
 
-When enabled:
+With interception enabled:
 
 ```text
 Browser
@@ -785,23 +936,34 @@ Burp
    X request paused
 ```
 
-Use:
+Actions:
 
 ```text
 Forward
+Drop
 ```
 
-to send the intercepted request.
+For general reconnaissance:
 
-For normal reconnaissance, turn Intercept off after login and use HTTP history.
+```text
+login
+→ turn Intercept off
+→ inspect HTTP history
+```
+
+For modification tests:
+
+```text
+Intercept on
+→ change one value
+→ Forward
+```
 
 ---
 
-# 49. HTTP History
+# 29. Burp HTTP History
 
-HTTP history records requests even when Intercept is off.
-
-Use it to inspect:
+Inspect:
 
 ```text
 method
@@ -813,9 +975,44 @@ response headers
 response body
 ```
 
+Useful filtering target:
+
+```text
+/api/
+```
+
 ---
 
-# 50. API Recon Workflow
+# 30. Burp Repeater
+
+Use Repeater when you want to:
+
+```text
+capture request
+→ modify value
+→ resend
+→ compare response
+```
+
+Typical workflow:
+
+```text
+HTTP history
+→ right-click request
+→ Send to Repeater
+```
+
+Use fresh values where application state requires them.
+
+Example:
+
+```text
+new Idempotency-Key
+```
+
+---
+
+# 31. API Recon Workflow
 
 ```text
 Authenticate normally
@@ -826,22 +1023,29 @@ Observe /api/ traffic
         ↓
 Record endpoints
         ↓
-Record HTTP methods
+Record methods
         ↓
-Record query parameters
+Inspect query parameters
         ↓
 Inspect request bodies
         ↓
 Inspect response objects
         ↓
-Map object identifiers
+Map object IDs
         ↓
 Identify trust boundaries
 ```
 
+Rule:
+
+```text
+map first
+test second
+```
+
 ---
 
-# 51. Bearer Authentication
+# 32. Bearer Authentication
 
 Observed:
 
@@ -851,7 +1055,7 @@ Authorization: Bearer <JWT>
 
 Bearer tokens are credentials.
 
-Never commit live token values into documentation.
+Never commit live values.
 
 Use:
 
@@ -861,15 +1065,13 @@ Authorization: Bearer <redacted>
 
 ---
 
-# 52. JWT Structure
-
-JWT:
+# 33. JWT Structure
 
 ```text
 header.payload.signature
 ```
 
-Useful claims observed in SecureBank:
+Useful claims:
 
 ```text
 iss
@@ -881,28 +1083,30 @@ azp
 realm roles
 ```
 
----
-
-# 53. SecureBank JWT Trust Model
+Mental model:
 
 ```text
-JWT
- │
- ├── issuer
- ├── audience
- ├── expiry
- ├── signature
- ├── subject
- └── roles
+decode token
+≠
+validate token
 ```
 
-The API must validate the token rather than merely decode it.
+The API must validate:
+
+```text
+signature
+issuer
+audience
+expiry
+```
+
+and use identity/claims for authorization.
 
 ---
 
-# 54. User Context Mental Model
+# 34. SecureBank User Context
 
-SecureBank collection endpoints do not send a user ID.
+Collection endpoints may not require a user ID in the URL.
 
 Example:
 
@@ -910,13 +1114,13 @@ Example:
 GET /api/accounts
 ```
 
-Instead:
+Mental model:
 
 ```text
 Bearer JWT
     │
     ▼
-sub
+   sub
     │
     ▼
 UserContext
@@ -925,74 +1129,146 @@ UserContext
 user-scoped data
 ```
 
----
-
-# 55. No User ID Does Not Mean No BOLA
-
 Important:
 
 ```text
-no userId in URL
+no userId parameter
 ≠
-no object authorization risk
+no authorization risk
 ```
 
-Object IDs can still appear in:
+Object identifiers can still appear in:
 
 ```text
+URL paths
 request bodies
-URL resource IDs
 responses
 related objects
 ```
 
 ---
 
-# 56. API Object References Discovered
+# 35. API Object References
 
-Accounts:
+## Accounts
 
 ```text
-account id
+account ID
 account number
 ```
 
-Transfers:
+## Transfers
 
 ```text
-transfer id
+transfer ID
 sourceAccountId
 destinationAccountId
+destinationAccountNumber
 ```
 
-Beneficiaries:
+## Beneficiaries
 
 ```text
-beneficiary id
+beneficiary ID
 accountId
 accountNumber
 ```
 
 ---
 
-# 57. Transfer Endpoint
+# 36. Authentication vs Authorization
+
+Authentication:
+
+```text
+Who are you?
+```
+
+Usually comes from:
+
+```text
+JWT
+```
+
+Authorization:
+
+```text
+Can you perform this action
+on this resource?
+```
+
+Mental model:
+
+```text
+JWT subject
++
+resource identifier
++
+requested action
+↓
+authorization decision
+```
+
+Authentication alone is not enough.
+
+---
+
+# 37. BOLA / IDOR
+
+BOLA:
+
+```text
+Broken Object Level Authorization
+```
+
+Basic failure pattern:
+
+```text
+authenticated user
+      │
+      ▼
+foreign object ID supplied
+      │
+      ▼
+server fails ownership check
+      │
+      ▼
+unauthorized access
+```
+
+Testing pattern:
+
+```text
+same authenticated user
+same endpoint
+same action
+different object ID
+```
+
+Change as little as possible.
+
+---
+
+# 38. SecureBank Transfer BOLA Test
+
+Endpoint:
 
 ```http
 POST /api/transfers
 ```
 
-Body:
+Relevant body:
 
 ```json
 {
-  "sourceAccountId": "...",
-  "destinationAccountNumber": "...",
+  "sourceAccountId": "<UUID>",
+  "destinationAccountNumber": "<account-number>",
   "amount": 5,
   "currency": "EUR"
 }
 ```
 
-Important boundary:
+Authorization boundary:
 
 ```text
 JWT subject
@@ -1002,62 +1278,46 @@ sourceAccountId
 ownership check
 ```
 
----
-
-# 58. BOLA Mental Model
-
-BOLA:
+Test:
 
 ```text
-Broken Object Level Authorization
+Nina token
++
+Alice sourceAccountId
++
+fresh Idempotency-Key
+↓
+403 Forbidden
 ```
 
-Basic pattern:
+Observed response:
 
-```text
-authenticated user
-      │
-      ▼
-object ID supplied
-      │
-      ▼
-server fails ownership check
-      │
-      ▼
-unauthorized object access
+```json
+{
+  "title": "Access forbidden.",
+  "status": 403,
+  "detail": "You are not allowed to transfer from this account.",
+  "instance": "/api/transfers"
+}
 ```
 
----
-
-# 59. SecureBank Transfer BOLA Candidate
-
-Legitimate:
+Result:
 
 ```text
-sourceAccountId = user's account
-```
-
-Future test:
-
-```text
-sourceAccountId = another user's account
-```
-
-Expected secure behavior:
-
-```text
-request rejected
+ownership enforced
 ```
 
 ---
 
-# 60. Beneficiary Delete Endpoint
+# 39. Beneficiary BOLA Test
+
+Endpoint:
 
 ```http
 DELETE /api/beneficiaries/{id}
 ```
 
-Critical boundary:
+Authorization boundary:
 
 ```text
 JWT subject
@@ -1067,33 +1327,53 @@ beneficiary ID
 ownership check
 ```
 
+Test:
+
+```text
+Nina token
++
+Alice beneficiary ID
+↓
+404 Not Found
+```
+
+Verification:
+
+```text
+Alice beneficiary still existed
+```
+
+Result:
+
+```text
+unauthorized deletion prevented
+```
+
 ---
 
-# 61. SecureBank Beneficiary BOLA Candidate
-
-Legitimate:
+# 40. 403 vs 404 in Authorization Tests
 
 ```text
-DELETE own beneficiary
+403 Forbidden
+→ resource/action recognized
+→ caller explicitly denied
 ```
-
-Future test:
 
 ```text
-DELETE another user's beneficiary
+404 Not Found
+→ may be ownership-scoped lookup
+→ may avoid revealing foreign object existence
 ```
 
-Expected:
+Do not judge authorization correctness by status code alone.
 
-```text
-rejected
-```
+Verify whether the protected object was accessed or modified.
 
 ---
 
-# 62. Transfer Idempotency
+# 41. Transfer Idempotency
 
-Observed header:
+Header:
 
 ```http
 Idempotency-Key: <UUID>
@@ -1104,22 +1384,41 @@ Purpose:
 ```text
 same logical request
 +
-same idempotency key
+same key
 ↓
 operation should not execute twice
 ```
 
-Future lab:
+Observed during BOLA testing:
 
 ```text
-replay identical transfer
+same Idempotency-Key
++
+modified request body
+↓
+original transferId returned
 ```
+
+Therefore:
+
+```text
+reused key
+→ request treated as replay
+```
+
+For a new authorization test:
+
+```text
+use a fresh Idempotency-Key
+```
+
+This behavior should be tested separately in a dedicated replay/idempotency lab.
 
 ---
 
-# 63. Query Parameters
+# 42. API Query Parameters
 
-Transfer history:
+Observed for transfer history:
 
 ```text
 page
@@ -1128,7 +1427,7 @@ sortBy
 sortDirection
 ```
 
-Potential future validation tests:
+Possible validation cases:
 
 ```text
 page=0
@@ -1137,67 +1436,264 @@ sortBy=invalid
 sortDirection=invalid
 ```
 
-Do not confuse reconnaissance with exploitation.
+Do not confuse:
 
-Map first, test later.
+```text
+reconnaissance
+with
+testing
+```
 
 ---
 
-# 64. API Object Graph
+# 43. API Object Graph
 
 ```text
 User
  │
  ├── Account
- │     └── accountId
+ │    └── accountId
  │
  ├── Transfer
- │     ├── transferId
- │     ├── sourceAccountId
- │     └── destinationAccountId
+ │    ├── transferId
+ │    ├── sourceAccountId
+ │    └── destinationAccountId
  │
  └── Beneficiary
-       ├── beneficiaryId
-       └── accountId
+      ├── beneficiaryId
+      └── accountId
 ```
 
 ---
 
-# 65. Identity vs Object Authorization
+# 44. Automated Security Scanning with fya
 
-Identity:
+Repository environment:
 
-```text
-Who are you?
+```bash
+cd ~/fya
+source .venv/bin/activate
 ```
 
-comes from:
+Version:
 
-```text
-JWT
+```bash
+fya --version
 ```
 
-Authorization:
+Detected external tools:
 
-```text
-Can you operate on this object?
+```bash
+fya tools
 ```
 
-requires checking:
+Profiles:
 
-```text
-JWT subject
-+
-resource identifier
+```bash
+fya scan https://securebank.lab:3443 --profile passive
 ```
 
-Authentication alone is not enough.
+```bash
+fya scan https://securebank.lab:3443 --profile safe
+```
+
+```bash
+fya scan https://securebank.lab:3443 --profile aggressive
+```
+
+Rule:
+
+```text
+scanner finding
+≠
+confirmed vulnerability
+```
+
+Validate findings manually.
 
 ---
 
-# 66. Reconnaissance vs Testing
+# 45. Python Virtual Environment for fya
 
-Reconnaissance:
+Create:
+
+```bash
+python3 -m venv .venv
+```
+
+Activate:
+
+```bash
+source .venv/bin/activate
+```
+
+Install:
+
+```bash
+pip install -e ".[dev]"
+```
+
+Useful when Kali blocks system-level pip installs with PEP 668.
+
+---
+
+# 46. fya Findings Observed
+
+Expected / real lab findings included:
+
+```text
+self-signed certificate
+missing HSTS
+missing COOP
+missing CORP
+missing security.txt
+```
+
+Scanner noise included apparent routes/files caused by SPA fallback behavior.
+
+Examples:
+
+```text
+/admin
+/administrator
+/actuator
+/actuator/env
+/metrics
+```
+
+and file-like paths such as:
+
+```text
+/backup.tar
+/site.war
+/database.jks
+```
+
+Manual validation is required.
+
+---
+
+# 47. Scanner False-Positive Validation
+
+For suspicious endpoint findings:
+
+```bash
+curl -k -i https://securebank.lab:3443/<path>
+```
+
+Compare with a deliberately nonexistent path:
+
+```bash
+curl -k -i \
+  https://securebank.lab:3443/this-definitely-does-not-exist-12345
+```
+
+Compare:
+
+```text
+status
+Content-Type
+Content-Length
+ETag
+response body
+```
+
+If responses are identical:
+
+```text
+scanner may be detecting SPA fallback
+rather than a real endpoint
+```
+
+---
+
+# 48. Automated Scanner Mental Model
+
+```text
+Scanner
+   │
+   ▼
+candidate finding
+   │
+   ▼
+manual reproduction
+   │
+   ▼
+context analysis
+   │
+   ▼
+confirmed issue
+OR
+false positive
+```
+
+Do not optimize the application only to make the scanner report zero findings.
+
+Fix real problems.
+
+Document scanner limitations.
+
+---
+
+# 49. Security Headers
+
+Useful inspection:
+
+```bash
+curl -k -I https://securebank.lab:3443/
+```
+
+Common headers:
+
+```text
+Strict-Transport-Security
+Content-Security-Policy
+X-Content-Type-Options
+X-Frame-Options
+Referrer-Policy
+Permissions-Policy
+Cross-Origin-Opener-Policy
+Cross-Origin-Resource-Policy
+```
+
+Remember:
+
+```text
+missing header
+≠
+automatically exploitable vulnerability
+```
+
+Interpret in application context.
+
+---
+
+# 50. CSP
+
+SecureBank frontend example:
+
+```text
+default-src 'self'
+base-uri 'none'
+connect-src 'self'
+font-src 'self'
+form-action 'self'
+frame-ancestors 'none'
+img-src 'self' data:
+object-src 'none'
+script-src 'self'
+style-src 'self'
+```
+
+Keycloak may require different CSP behavior.
+
+Do not impose the SPA policy globally on proxied authentication pages.
+
+---
+
+# 51. Reconnaissance vs Testing
+
+Recon:
 
 ```text
 discover
@@ -1216,15 +1712,7 @@ cross boundaries
 verify controls
 ```
 
-Do not mix them unnecessarily.
-
----
-
-# 67. API Recon Principle
-
-Same mindset as Nmap.
-
-Networking:
+Same mindset as network enumeration:
 
 ```text
 do not assume ports
@@ -1240,38 +1728,219 @@ do not assume endpoints
 
 ---
 
-# 68. Labs 01–05 Progression
+# 52. Core Security Testing Pattern
 
 ```text
-Lab 01
-HTTP vs HTTPS
-      ↓
-What crosses the network?
+Baseline
+   ↓
+Change one variable
+   ↓
+Send request
+   ↓
+Observe response
+   ↓
+Verify resulting state
+   ↓
+Interpret control
+```
 
-Lab 02
-Docker Exposure
-      ↓
-What is reachable?
+Examples:
 
-Lab 03
-Nmap Enumeration
-      ↓
-What can an attacker discover?
+```text
+own account ID
+→ foreign account ID
+```
 
-Lab 04
-Firewall Segmentation
-      ↓
-What should the attacker reach?
+```text
+own beneficiary ID
+→ foreign beneficiary ID
+```
 
-Lab 05
-API Reconnaissance
-      ↓
-What application surface exists behind HTTPS?
+This reduces ambiguity.
+
+---
+
+# 53. Useful Mental Models
+
+```text
+container listening
+≠
+host port published
+```
+
+```text
+service running
+≠
+remotely reachable
+```
+
+```text
+HTTP 200
+≠
+real resource exists
+```
+
+```text
+authentication
+≠
+authorization
+```
+
+```text
+object identifier
+≠
+authorization control
+```
+
+```text
+UUID difficult to guess
+≠
+ownership enforced
+```
+
+```text
+scanner finding
+≠
+confirmed vulnerability
+```
+
+```text
+blocked service
+≠
+stopped service
+```
+
+```text
+decode JWT
+≠
+validate JWT
 ```
 
 ---
 
-# 69. Core Security Engineering Workflow
+# 54. Quick Commands
+
+## Networking
+
+```bash
+ip -br addr
+ip route
+ping -c 4 <host>
+sudo ss -ltnp
+```
+
+## Nmap
+
+```bash
+nmap <host>
+nmap -p- <host>
+nmap -sV -p <ports> <host>
+nmap -sC -sV -p <ports> <host>
+```
+
+## HTTP
+
+```bash
+curl -k https://host
+curl -k -I https://host
+curl -k -i https://host/path
+```
+
+## TLS
+
+```bash
+openssl s_client \
+  -connect host:port \
+  -servername hostname
+```
+
+## Docker
+
+```bash
+docker ps
+docker compose ps
+docker compose logs --tail=100
+docker network inspect <network>
+```
+
+## Firewall
+
+```bash
+sudo ufw status verbose
+sudo ufw status numbered
+sudo journalctl -kf
+```
+
+## Burp
+
+```text
+Proxy → Open browser
+Proxy → HTTP history
+Proxy → Intercept
+Repeater
+```
+
+## fya
+
+```bash
+source ~/fya/.venv/bin/activate
+
+fya tools
+
+fya scan https://securebank.lab:3443 --profile passive
+fya scan https://securebank.lab:3443 --profile safe
+fya scan https://securebank.lab:3443 --profile aggressive
+```
+
+---
+
+# 55. Lab Lessons
+
+## HTTP vs HTTPS
+
+```text
+TLS protects application payloads in transit.
+```
+
+## Docker Exposure
+
+```text
+A container can listen without being remotely exposed.
+```
+
+## Nmap
+
+```text
+Enumeration should be progressive.
+```
+
+## Firewalling
+
+```text
+Filtering controls reachability without necessarily stopping the service.
+```
+
+## API Recon
+
+```text
+Map objects and trust boundaries before testing them.
+```
+
+## BOLA / IDOR
+
+```text
+Never trust client-controlled object IDs without server-side authorization.
+```
+
+## Automated Scanning
+
+```text
+Use scanners to generate hypotheses, then validate them manually.
+```
+
+---
+
+# 56. Core Workflow
 
 ```text
 Build / Configure
@@ -1287,101 +1956,6 @@ Remediate
 Verify
 ```
 
----
+Security tools are evidence-gathering mechanisms.
 
-# 70. Commands / Tools Worth Remembering
-
-Networking:
-
-```bash
-ip addr
-ip route
-ping -c 4 <host>
-```
-
-Nmap:
-
-```bash
-nmap <host>
-nmap -p- <host>
-nmap -sV -p <ports> <host>
-nmap -sC -sV -p <ports> <host>
-```
-
-HTTP:
-
-```bash
-curl -k https://host
-curl -k -I https://host
-```
-
-TLS:
-
-```bash
-openssl s_client -connect host:port -servername hostname
-```
-
-Docker:
-
-```bash
-docker compose ps
-docker compose logs --tail=100
-docker network inspect <network>
-```
-
-Firewall:
-
-```bash
-sudo ufw status verbose
-sudo journalctl -kf
-```
-
-Sockets:
-
-```bash
-sudo ss -ltnp
-```
-
-Burp:
-
-```text
-Proxy → Intercept
-Proxy → HTTP history
-Proxy → Open browser
-```
-
----
-
-# 71. Commands Are Not the Objective
-
-The important question is not:
-
-> Which command should I memorize?
-
-It is:
-
-> What security question am I trying to answer?
-
-Examples:
-
-```text
-nmap -p-
-```
-
-answers:
-
-> Are services listening outside Nmap's default port set?
-
-```text
-ss -ltnp
-```
-
-answers:
-
-> Is the service still listening locally?
-
-Burp HTTP history answers:
-
-> What API surface does the browser actually use?
-
-Security tools are evidence-gathering mechanisms rather than the purpose of the lab.
+The security question comes first.

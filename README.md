@@ -18,6 +18,8 @@ Rather than serving as a collection of course notes or CTF write-ups, it focuses
 - map object and trust boundaries
 - test security controls
 - analyze authentication and authorization
+- validate automated scanner findings
+- distinguish real findings from false positives
 - harden configurations
 - inspect defensive telemetry
 - verify remediations
@@ -34,7 +36,7 @@ It is used throughout the portfolio as both:
 
 ```text
 application
-+
+    +
 security target
 ```
 
@@ -52,27 +54,28 @@ SecureBank provides a practical environment for exploring:
 - OIDC
 - JWT
 - object-level authorization
-- security monitoring
+- automated security scanning
 - application hardening
+- security monitoring
 - DevSecOps
 
 The application remains in its own repository.
 
-The portfolio contains the security methodology, evidence, findings, and writeups generated while assessing it.
+The portfolio contains the security methodology, evidence, findings, and write-ups generated while assessing it.
 
 ## Security Lab Environment
 
 ```text
                     Internet
                        │
-                VirtualBox NAT
-                  │         │
-               Kali       Ubuntu
-                  │         │
-                  └────┬────┘
-                       │
-                securebank-lab
-                192.168.56.0/24
+                 VirtualBox NAT
+                   │         │
+                Kali       Ubuntu
+                   │         │
+                   └────┬────┘
+                        │
+                 securebank-lab
+                 192.168.56.0/24
 ```
 
 Attacker:
@@ -96,14 +99,9 @@ Application:
 https://securebank.lab:3443
 ```
 
-Current external service state from Kali:
+The lab uses a dedicated VirtualBox Host-Only network for attacker-to-target testing while NAT adapters provide Internet access where needed.
 
-```text
-22/tcp   filtered
-3443/tcp open
-```
-
-Backend services remain inside Docker.
+Backend services remain inside Docker unless explicitly exposed for a lab.
 
 ## Labs
 
@@ -121,6 +119,8 @@ Backend services remain inside Docker.
 | Lab | Technologies | Topics |
 | --- | --- | --- |
 | [01 — API Reconnaissance and Attack-Surface Mapping](./web-api-security/01-api-recon-and-attack-surface/) | Burp Suite, HTTP, REST, JWT, Keycloak | Authenticated reconnaissance, endpoint discovery, object mapping, authorization-boundary identification |
+| [02 — BOLA / IDOR Testing](./web-api-security/02-bola-idor-testing/) | Burp Suite, Repeater, JWT, REST API | Object-level authorization, ownership testing, identifier manipulation, `403` vs `404`, idempotency awareness |
+| [03 — Automated Security Scanning and False-Positive Validation](./web-api-security/03-automated-security-scanning/) | fya, Nikto, curl, Nginx | DAST, active scanning, false-positive validation, SPA soft-404 behavior, scanner noise reduction, security-header verification |
 
 ### Reference Material
 
@@ -142,8 +142,15 @@ Depending on the lab, evidence may include:
 - firewall events
 - API bodies
 - JWT claims
+- Burp Repeater results
+- scanner findings
+- manual validation requests
 - application logs
 - SIEM events
+
+Automated findings are treated as leads rather than unquestioned results.
+
+Where practical, findings are manually reproduced before they are classified as genuine security issues.
 
 ## Current Lab Progression
 
@@ -155,6 +162,7 @@ HTTP vs HTTPS
 What crosses the network?
       │
       ▼
+
 Lab 02
 Docker Network Exposure
       │
@@ -162,6 +170,7 @@ Docker Network Exposure
 What is reachable?
       │
       ▼
+
 Lab 03
 Nmap Enumeration
       │
@@ -169,6 +178,7 @@ Nmap Enumeration
 What can an attacker discover?
       │
       ▼
+
 Lab 04
 Host Firewall and Service Segmentation
       │
@@ -176,6 +186,7 @@ Host Firewall and Service Segmentation
 What should be reachable?
       │
       ▼
+
 Lab 05
 API Reconnaissance
       │
@@ -183,8 +194,22 @@ API Reconnaissance
 What application surface exists behind HTTPS?
       │
       ▼
-Next:
+
+Lab 06
 BOLA / IDOR Testing
+      │
+      ▼
+Can authenticated users manipulate object identifiers
+to act on resources they do not own?
+      │
+      ▼
+
+Lab 07
+Automated Security Scanning
+      │
+      ▼
+Which scanner findings are real,
+and which are artifacts of application behavior?
 ```
 
 The progression deliberately moves upward through the stack rather than treating tools as unrelated exercises.
@@ -250,6 +275,33 @@ The progression deliberately moves upward through the stack rather than treating
 - authorization-boundary identification
 - replay/idempotency candidate identification
 
+### Object-Level Authorization Testing
+
+- BOLA / IDOR methodology
+- Burp Repeater
+- client-controlled identifier manipulation
+- cross-user ownership testing
+- state-changing authorization tests
+- `403 Forbidden` interpretation
+- ownership-scoped `404 Not Found`
+- verification of object integrity after rejected operations
+- separating authorization behavior from idempotency behavior
+
+### Automated Security Testing
+
+- passive, safe, and aggressive scan profiles
+- DAST workflow
+- scanner result validation
+- external-tool orchestration
+- Nikto result interpretation
+- SPA soft-404 analysis
+- false-positive investigation
+- manual `curl` verification
+- Nginx location matching
+- security-header verification
+- before/after scan comparison
+- scanner noise reduction
+
 ## Example Security Engineering Findings
 
 ### Plaintext HTTP Exposure
@@ -289,27 +341,23 @@ Server: nginx
 
 ### SSH Management Exposure
 
-Before:
+The lab demonstrated that an application service can remain reachable while management access is restricted independently by the host firewall.
+
+This reinforced the distinction between:
 
 ```text
-22/tcp open
+service running
 ```
 
-After UFW:
+and:
 
 ```text
-22/tcp filtered
-```
-
-while:
-
-```text
-sshd remains active
+service reachable from a given network
 ```
 
 ### API Object Authorization Boundaries
 
-Burp reconnaissance identified:
+API reconnaissance identified client-controlled identifiers including:
 
 ```text
 POST /api/transfers
@@ -323,9 +371,44 @@ DELETE /api/beneficiaries/{id}
 → beneficiaryId
 ```
 
-as client-controlled resource identifiers requiring server-side ownership checks.
+These were subsequently tested for cross-user object access.
 
-### Transfer Replay Boundary
+### Transfer Source Ownership
+
+A transfer request authenticated as Nina was modified to use another user's account ID as `sourceAccountId`.
+
+With a fresh idempotency key, the API returned:
+
+```http
+HTTP/1.1 403 Forbidden
+```
+
+```json
+{
+  "title": "Access forbidden.",
+  "status": 403,
+  "detail": "You are not allowed to transfer from this account.",
+  "instance": "/api/transfers"
+}
+```
+
+The test confirmed that the backend enforces ownership of the transfer source account.
+
+### Beneficiary Ownership
+
+A beneficiary deletion request authenticated as Nina was intercepted and modified to reference another user's beneficiary ID.
+
+The API returned:
+
+```http
+HTTP/1.1 404 Not Found
+```
+
+The foreign beneficiary remained intact after the request.
+
+This demonstrated an ownership-scoped lookup that prevented unauthorized deletion without confirming the existence of the other user's resource.
+
+### Transfer Idempotency Observation
 
 Transfer requests include:
 
@@ -333,7 +416,76 @@ Transfer requests include:
 Idempotency-Key: <UUID>
 ```
 
-providing a separate future test for replay resistance.
+During authorization testing, a modified request replayed with the original idempotency key returned the original `transferId`.
+
+A fresh key was required before the modified request could be used as a valid authorization test.
+
+This identified idempotency behavior as a separate security boundary for future replay testing.
+
+### SPA Soft-404 Scanner False Positives
+
+An aggressive automated scan initially produced a large number of apparent findings for paths such as:
+
+```text
+/backup.tar
+/database.jks
+/site.war
+/admin
+/actuator
+```
+
+Manual validation showed that many nonexistent paths were returning:
+
+```http
+HTTP/1.1 200 OK
+Content-Type: text/html
+```
+
+with the normal SecureBank SPA shell.
+
+The root cause was SPA fallback routing:
+
+```nginx
+location / {
+    try_files $uri $uri/ /index.html;
+}
+```
+
+File-like requests were subsequently changed to return a real `404` unless the resource existed:
+
+```nginx
+location ~ \.[^/]+$ {
+    try_files $uri =404;
+}
+```
+
+The number of external-tool findings dropped dramatically.
+
+This demonstrated that:
+
+```text
+HTTP 200
+≠
+resource necessarily exists
+```
+
+and that scanner findings require contextual validation.
+
+### Nginx Location Matching and Security Headers
+
+Changing static-file handling initially caused SecureBank security headers to disappear from some responses because `/index.html` was internally reprocessed through a different Nginx location.
+
+The configuration was adjusted and verified using:
+
+```bash
+curl -k -I https://securebank.lab:3443/
+```
+
+A second routing issue was also identified when the generic file-matching location intercepted Keycloak static assets.
+
+The `/auth/` and `/api/` proxy locations were given explicit precedence so proxied application resources were not handled as local frontend files.
+
+These changes reinforced that Nginx location selection can affect both application behavior and security controls.
 
 ## Current Focus
 
@@ -349,6 +501,7 @@ Current study areas include:
 - authorization
 - IAM
 - JWT/OIDC
+- automated application security testing
 - SIEM
 - detection engineering
 - secure software development
@@ -360,16 +513,15 @@ Current study areas include:
 
 Next:
 
-- BOLA/IDOR testing
-- transfer-source ownership tests
-- beneficiary ownership tests
 - broken function-level authorization
 - JWT validation
-- replay/idempotency
+- replay/idempotency testing
 - rate limiting
 - malformed input
+- mass assignment
 - CORS
 - security headers
+- broader API security assessment
 
 ### Identity and Access
 
@@ -443,13 +595,14 @@ cybersecurity-portfolio/
 ├── web-api-security/
 │   ├── 01-api-recon-and-attack-surface/
 │   ├── 02-bola-idor-testing/
-│   ├── 03-broken-function-level-authorization/
-│   ├── 04-jwt-token-validation/
-│   ├── 05-rate-limiting-and-replay/
-│   ├── 06-input-validation-and-mass-assignment/
-│   ├── 07-burp-suite-api-testing/
-│   ├── 08-security-headers-and-cors/
-│   └── 09-api-security-assessment/
+│   ├── 03-automated-security-scanning/
+│   ├── 04-broken-function-level-authorization/
+│   ├── 05-jwt-token-validation/
+│   ├── 06-replay-and-idempotency/
+│   ├── 07-rate-limiting/
+│   ├── 08-input-validation-and-mass-assignment/
+│   ├── 09-security-headers-and-cors/
+│   └── 10-api-security-assessment/
 │
 ├── identity-and-access/
 │   ├── 01-keycloak-realm-hardening/
@@ -501,9 +654,13 @@ Good examples:
 
 > What services can an attacker discover without prior architecture knowledge?
 
-> Can SecureBank stay reachable while SSH management access is blocked?
+> Can SecureBank stay reachable while management access is restricted?
 
 > What API objects and authorization boundaries can an authenticated tester discover?
+
+> Can an authenticated user operate on another user's resources by modifying an object identifier?
+
+> Are automated scanner findings genuine vulnerabilities or artifacts of application routing?
 
 Less useful framing:
 
@@ -512,6 +669,8 @@ Less useful framing:
 > Learning Burp.
 
 > Learning UFW.
+
+> Running a scanner.
 
 Tools are mechanisms for answering security questions.
 
@@ -524,6 +683,8 @@ Testing is restricted to:
 - environments where explicit authorization exists
 
 The Kali/Ubuntu environment is deliberately isolated for controlled security testing.
+
+No testing documented in this repository is intended for systems outside that scope.
 
 ## Goal
 
@@ -540,6 +701,8 @@ Enumerate
   +
 Attack / test
   +
+Validate
+  +
 Detect
   +
 Remediate
@@ -547,4 +710,4 @@ Remediate
 Verify
 ```
 
-The goal is not to separate development and security, but to understand how architecture, code, networking, identity, offensive testing, monitoring, and defensive controls interact.
+The goal is not to separate development and security, but to understand how architecture, code, networking, identity, offensive testing, monitoring, automated tooling, and defensive controls interact.
